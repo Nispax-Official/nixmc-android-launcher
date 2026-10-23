@@ -145,7 +145,8 @@ object MinecraftLaunchPlanner {
     private fun replaceVariables(value: String, replacements: Map<String, String>): String {
         var result = value
         replacements.forEach { (key, replacement) ->
-            result = result.replace("\${$key}", replacement)
+            val token = "$" + "{" + key + "}"
+            result = result.replace(token, replacement)
         }
         return result
     }
