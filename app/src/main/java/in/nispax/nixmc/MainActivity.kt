@@ -582,8 +582,14 @@ private fun SetupScreen(
                         scope.launch {
                             isCheckingLaunchPlan = true
                             launchPlanError = false
-                            launchPlanStatus = "Checking installed metadata and libraries…"
+                            launchPlanStatus = "Verifying and repairing installed game files…"
                             try {
+                                // Re-run the idempotent installer before checking. It verifies cached files
+                                // and downloads any missing/corrupt libraries or assets left by an interrupted run.
+                                withContext(Dispatchers.IO) {
+                                    `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context)
+                                }
+                                launchPlanStatus = "Game files verified. Checking launch arguments…"
                                 val plan = withContext(Dispatchers.IO) {
                                     `in`.nispax.nixmc.install.MinecraftLaunchPlanner.create(
                                         File(context.filesDir, "minecraft"),
@@ -593,18 +599,18 @@ private fun SetupScreen(
                                 launchPlanStatus = if (plan.missingFiles.isEmpty()) {
                                     "Game files resolve to ${plan.mainClass}. The Android-native graphics/launch bridge is still missing."
                                 } else {
-                                    "Missing ${plan.missingFiles.size} required file(s). First: ${plan.missingFiles.take(3).joinToString()}"
+                                    "Still missing ${plan.missingFiles.size} required file(s). First: ${plan.missingFiles.take(3).joinToString()}"
                                 }
                                 launchPlanError = plan.missingFiles.isNotEmpty()
                             } catch (error: Exception) {
                                 launchPlanError = true
-                                launchPlanStatus = error.message ?: "Could not prepare launch plan."
+                                launchPlanStatus = "Repair failed: " + (error.message ?: "Check your internet connection and retry.")
                             } finally {
                                 isCheckingLaunchPlan = false
                             }
                         }
                     },
-                    enabled = !isCheckingLaunchPlan,
+                    enabled = !isCheckingLaunchPlan && !isDownloading && !isInstallingRuntime,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {

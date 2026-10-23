@@ -42,4 +42,4 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 - Microsoft account authentication for services that require it
 - Installation integrity checks, progress, and error recovery
 
-The installer now fetches the main game payload for 1.21.11, but NixMC still cannot launch the game until Java 21 runtime execution, Android-compatible native libraries, graphics rendering, and input support are integrated and tested.
+The launch-readiness action now re-verifies the cached install and repairs missing/corrupt official libraries and assets before reporting file status. Runtime startup probes include Android linker diagnostics and configure the extracted JRE library paths. NixMC still cannot launch Minecraft until the Java process is started through a working Android-compatible launch/native bridge and graphics/input integration is implemented and tested.

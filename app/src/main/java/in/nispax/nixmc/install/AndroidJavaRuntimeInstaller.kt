@@ -49,8 +49,8 @@ object AndroidJavaRuntimeInstaller {
 
         val existingJava = findJava(runtimeRoot)
         if (existingJava != null) {
-            val smokeTest = testJava(existingJava)
-            if (smokeTest) return@withContext InstalledJavaRuntime(runtimeRoot, existingJava, RUNTIME_VERSION)
+            val probeError = testJava(existingJava)
+            if (probeError == null) return@withContext InstalledJavaRuntime(runtimeRoot, existingJava, RUNTIME_VERSION)
         }
 
         onStatus("Downloading Android Java 21 runtime for ${asset.arch}…")
@@ -72,9 +72,9 @@ object AndroidJavaRuntimeInstaller {
         val java = findJava(runtimeRoot)
             ?: error("Runtime archive extracted, but bin/java was not found.")
         java.setExecutable(true, true)
-        val smokeTest = testJava(java)
-        check(smokeTest) {
-            "Java runtime was extracted but could not start on this device. The native launcher bridge is not integrated yet."
+        val probeError = testJava(java)
+        check(probeError == null) {
+            "Java 21 files were extracted, but the runtime could not start: $probeError. A compatible Android JVM/native bridge is still required."
         }
         onStatus("Java 21 runtime installed and passed java -version.")
         InstalledJavaRuntime(runtimeRoot, java, RUNTIME_VERSION)
@@ -178,14 +178,44 @@ object AndroidJavaRuntimeInstaller {
         return candidates.firstOrNull()
     }
 
-    private fun testJava(java: File): Boolean = try {
-        val process = ProcessBuilder(java.absolutePath, "-version")
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        process.waitFor() == 0 && output.contains("21")
-    } catch (_: Exception) {
-        false
+    /**
+     * Probe the extracted JRE with its own library paths set. Keep the diagnostic
+     * output because Android linker/ABI failures otherwise look like a generic install failure.
+     */
+    private fun testJava(java: File): String? {
+        return try {
+            val javaHome = java.parentFile?.parentFile
+                ?: return "Cannot determine JAVA_HOME from ${java.absolutePath}"
+            val command = ProcessBuilder(java.absolutePath, "-version").redirectErrorStream(true)
+            val environment = command.environment()
+            environment["JAVA_HOME"] = javaHome.absolutePath
+            val runtimeLibs = listOf(
+                File(javaHome, "lib"),
+                File(javaHome, "lib/server"),
+                File(javaHome, "lib/aarch64"),
+                File(javaHome, "lib/aarch64/server"),
+                File(javaHome, "lib/arm"),
+                File(javaHome, "lib/arm/server"),
+                File(javaHome, "lib/x86_64"),
+                File(javaHome, "lib/x86_64/server")
+            ).filter { it.isDirectory }.map { it.absolutePath }
+            environment["LD_LIBRARY_PATH"] = (runtimeLibs +
+                listOfNotNull(environment["LD_LIBRARY_PATH"]?.takeIf { it.isNotBlank() }))
+                .distinct().joinToString(File.pathSeparator)
+            val temp = File(javaHome, "tmp").apply { mkdirs() }
+            environment["TMPDIR"] = temp.absolutePath
+
+            val process = command.start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.take(1200)
+            val exitCode = process.waitFor()
+            if (exitCode == 0 && Regex("""version\s+"?21""").containsMatchIn(output)) {
+                null
+            } else {
+                "java -version exited with code $exitCode: ${output.ifBlank { "(no output)" }}"
+            }
+        } catch (error: Exception) {
+            "${error.javaClass.simpleName}: ${error.message ?: "no details"}"
+        }
     }
 
     private fun sha256(file: File): String {
