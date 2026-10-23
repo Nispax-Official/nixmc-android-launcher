@@ -60,6 +60,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import `in`.nispax.nixmc.profile.PlayerNameValidator
 import `in`.nispax.nixmc.profile.PlayerProfileRepository
 
@@ -183,6 +186,7 @@ private fun NixMCApp(
                 )
 
                 AppScreen.SETUP -> SetupScreen(
+                    username = username,
                     selectedVersion = selectedVersion,
                     onVersionSelected = { version ->
                         if (saveSelectedVersion(version)) selectedVersion = version
@@ -428,6 +432,7 @@ private fun ProfileScreen(
 
 @Composable
 private fun SetupScreen(
+    username: String,
     selectedVersion: String,
     onVersionSelected: (String) -> Unit,
     onOpenProfile: () -> Unit
@@ -440,6 +445,9 @@ private fun SetupScreen(
     var runtimeStatus by rememberSaveable { mutableStateOf("Java 21 runtime not installed.") }
     var installError by rememberSaveable { mutableStateOf(false) }
     var runtimeError by rememberSaveable { mutableStateOf(false) }
+    var isCheckingLaunchPlan by rememberSaveable { mutableStateOf(false) }
+    var launchPlanStatus by rememberSaveable { mutableStateOf("Launch plan not checked yet.") }
+    var launchPlanError by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -565,6 +573,50 @@ private fun SetupScreen(
                 Text(
                     runtimeStatus,
                     color = if (runtimeError) MaterialTheme.colorScheme.error else NixMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isCheckingLaunchPlan = true
+                            launchPlanError = false
+                            launchPlanStatus = "Checking installed metadata and libraries…"
+                            try {
+                                val plan = withContext(Dispatchers.IO) {
+                                    `in`.nispax.nixmc.install.MinecraftLaunchPlanner.create(
+                                        File(context.filesDir, "minecraft"),
+                                        username
+                                    )
+                                }
+                                launchPlanStatus = if (plan.missingFiles.isEmpty()) {
+                                    "Game files resolve to ${plan.mainClass}. The Android-native graphics/launch bridge is still missing."
+                                } else {
+                                    "Missing ${plan.missingFiles.size} required file(s). First: ${plan.missingFiles.take(3).joinToString()}"
+                                }
+                                launchPlanError = plan.missingFiles.isNotEmpty()
+                            } catch (error: Exception) {
+                                launchPlanError = true
+                                launchPlanStatus = error.message ?: "Could not prepare launch plan."
+                            } finally {
+                                isCheckingLaunchPlan = false
+                            }
+                        }
+                    },
+                    enabled = !isCheckingLaunchPlan,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (isCheckingLaunchPlan) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (isCheckingLaunchPlan) "CHECKING LAUNCH PLAN…" else "CHECK LAUNCH READINESS")
+                }
+                Text(
+                    launchPlanStatus,
+                    color = if (launchPlanError) MaterialTheme.colorScheme.error else NixMuted,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
