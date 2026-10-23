@@ -725,7 +725,7 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "0.1.0")
+                InfoRow("App version", "0.2.0")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")

@@ -37,8 +37,8 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 
 - Native library selection and Android-compatible native extraction
 - Compatible Java 21 runtime provisioning/execution on Android
-- Rendering and input integration
-- Connecting saved profiles to launch arguments
+- Android-compatible LWJGL/GLFW native bridge, graphics renderer, and touch controls
+- Starting the resolved launch plan through the native bridge and connecting profiles to a real game process
 - Microsoft account authentication for services that require it
 - Installation integrity checks, progress, and error recovery
 
