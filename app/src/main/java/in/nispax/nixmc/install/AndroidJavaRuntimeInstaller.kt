@@ -1,7 +1,6 @@
 package `in`.nispax.nixmc.install
 
 import android.system.Os
-import android.system.OsConstants
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -153,7 +152,14 @@ object AndroidJavaRuntimeInstaller {
                     entry.isFile -> {
                         output.parentFile?.mkdirs()
                         output.outputStream().buffered().use { out ->
-                            tar.copyTo(out, 64 * 1024)
+                            val buffer = ByteArray(64 * 1024)
+                            var remaining = entry.size
+                            while (remaining > 0) {
+                                val read = tar.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                                if (read < 0) error("Unexpected end of Java runtime archive.")
+                                out.write(buffer, 0, read)
+                                remaining -= read
+                            }
                         }
                         val executableBits = entry.mode and 0x49
                         if (executableBits != 0) output.setExecutable(true, false)

@@ -433,8 +433,11 @@ private fun SetupScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var isDownloading by rememberSaveable { mutableStateOf(false) }
-    var installStatus by rememberSaveable { mutableStateOf("Client files not downloaded yet.") }
+    var isInstallingRuntime by rememberSaveable { mutableStateOf(false) }
+    var installStatus by rememberSaveable { mutableStateOf("Game files not downloaded yet.") }
+    var runtimeStatus by rememberSaveable { mutableStateOf("Java 21 runtime not installed.") }
     var installError by rememberSaveable { mutableStateOf(false) }
+    var runtimeError by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -516,6 +519,53 @@ private fun SetupScreen(
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isInstallingRuntime = true
+                            runtimeError = false
+                            runtimeStatus = "Preparing Java 21 runtime…"
+                            try {
+                                val runtime = `in`.nispax.nixmc.install.AndroidJavaRuntimeInstaller.install(context.filesDir) { status ->
+                                    runtimeStatus = status
+                                }
+                                runtimeStatus = "Java ${runtime.majorVersion} passed its startup check."
+                            } catch (error: Exception) {
+                                runtimeError = true
+                                runtimeStatus = error.message ?: "Java runtime installation failed."
+                            } finally {
+                                isInstallingRuntime = false
+                            }
+                        }
+                    },
+                    enabled = !isInstallingRuntime,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NixBlue,
+                        contentColor = Color(0xFF10150C)
+                    )
+                ) {
+                    if (isInstallingRuntime) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF10150C)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    } else {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (isInstallingRuntime) "INSTALLING JAVA 21…" else "INSTALL JAVA 21 RUNTIME")
+                }
+                Text(
+                    runtimeStatus,
+                    color = if (runtimeError) MaterialTheme.colorScheme.error else NixMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
             }
         }
 
@@ -540,7 +590,7 @@ private fun SetupScreen(
         }
 
         Text(
-            "The installer downloads and verifies the client, regular libraries, and asset objects. Minecraft still cannot launch until a compatible Android Java 21 runtime, native library handling, graphics renderer, and touch controls are integrated.",
+            "Install game files and the Android Java 21 runtime above. Minecraft still cannot launch until the Android-native LWJGL/GLFW bridge, native library handling, graphics renderer, and touch controls are integrated.",
             color = NixMuted,
             fontSize = 13.sp,
             lineHeight = 19.sp
