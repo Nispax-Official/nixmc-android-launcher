@@ -47,7 +47,6 @@ object MinecraftLaunchPlanner {
         val mainClass = metadata.optString("mainClass")
         if (mainClass.isBlank()) missing += "mainClass is absent from version metadata"
 
-        val downloads = metadata.optJSONObject("downloads")
         val client = File(versionDirectory, "$VERSION.jar")
         if (!client.isFile) missing += "Client JAR: ${client.absolutePath}"
 
@@ -92,7 +91,6 @@ object MinecraftLaunchPlanner {
             "library_directory" to File(gameDirectory, "libraries").absolutePath
         )
         val jvmArgs = readArguments(metadata.optJSONObject("arguments")?.optJSONArray("jvm"), architecture)
-            .filterNot { it == "${classpath}" }
             .map { replaceVariables(it, replacements) }
         val gameArgs = readArguments(metadata.optJSONObject("arguments")?.optJSONArray("game"), architecture)
             .map { replaceVariables(it, replacements) }
@@ -147,7 +145,7 @@ object MinecraftLaunchPlanner {
     private fun replaceVariables(value: String, replacements: Map<String, String>): String {
         var result = value
         replacements.forEach { (key, replacement) ->
-            result = result.replace("${$key}", replacement)
+            result = result.replace("\${$key}", replacement)
         }
         return result
     }
