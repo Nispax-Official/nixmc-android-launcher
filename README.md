@@ -1,32 +1,45 @@
 # NixMC — Minecraft Java launcher for Android
 
-NixMC is an early-stage Android launcher project exploring a mobile-first experience for Minecraft Java Edition.
+NixMC is an early-stage, mobile-first launcher project for Minecraft Java Edition.
 
-## Project status
+## Current milestone
 
-The initial Android app scaffold and a dark Jetpack Compose home screen are in place. Minecraft installation, Java runtime integration, rendering/input compatibility, account authentication, and profile persistence are not implemented yet.
+The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. The active offline profile name is editable, validated, and persisted locally using Android's private app preferences. Unit tests cover the player-name validation rules, and GitHub Actions runs the unit tests and builds a debug APK on pushes and pull requests.
 
-## Package
+## Android configuration
 
-- Namespace: `in.nispax.nixmc`
-- Application ID: `in.nispax.nixmc`
+- Namespace / application ID: `in.nispax.nixmc`
 - Language: Kotlin
-- UI: Jetpack Compose / Material 3
-- Minimum Android SDK: 26
-- Java toolchain target: 17
+- UI: Jetpack Compose + Material 3
+- Minimum Android SDK: 26 (Android 8.0)
+- Compile / target SDK: 35
+- Java bytecode target: 17
+- Android Gradle Plugin: 8.9.2
+- Gradle build version used in CI: 8.11.1
 
-## Build
+## Build and test
 
-Open the repository in a recent Android Studio version with JDK 17 installed. Allow Gradle to sync, then run the `app` configuration on an Android device or emulator.
+Open the repository in a recent Android Studio installation with JDK 17 and Android SDK Platform 35 installed. Sync the project, then run the `app` configuration on a device or emulator.
 
-## Offline profiles
+For a local command-line build, install Gradle 8.11.1 and Android SDK Platform 35, then run:
 
-The project intends to support custom offline profiles for single-player/local use and servers that explicitly allow offline-mode connections. Offline profiles do not authenticate a Microsoft account and cannot establish authenticated identity on online-mode servers.
+```sh
+gradle testDebugUnitTest assembleDebug
+```
 
-## Roadmap
+The debug APK will be generated at `app/build/outputs/apk/debug/app-debug.apk`.
 
-1. Finish and verify the Android build scaffold.
-2. Add editable player profiles and local persistence.
-3. Investigate a compatible Java runtime and Android rendering/input stack.
-4. Implement version metadata, downloads, libraries, assets, and launch arguments.
-5. Add authenticated Microsoft account support for services that require it.
+## Offline profile behavior
+
+NixMC currently stores a local player name only. Names are restricted to 3–16 English letters, numbers, and underscores. An offline profile does not sign in to Microsoft, prove account ownership, or authenticate identity to online-mode servers. The profile is not passed to a game process yet because the Java runtime and game launch pipeline have not been integrated.
+
+## Not implemented yet
+
+- Minecraft version metadata, asset, library, and game-file downloads
+- Compatible Java runtime provisioning/execution on Android
+- Rendering and input integration
+- Connecting saved profiles to launch arguments
+- Microsoft account authentication for services that require it
+- Installation integrity checks, progress, and error recovery
+
+NixMC does not present a working Launch action until those pieces exist.
