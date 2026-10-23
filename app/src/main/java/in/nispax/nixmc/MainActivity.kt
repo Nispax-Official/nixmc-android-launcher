@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -430,6 +429,12 @@ private fun SetupScreen(
     onVersionSelected: (String) -> Unit,
     onOpenProfile: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var isDownloading by rememberSaveable { mutableStateOf(false) }
+    var installStatus by rememberSaveable { mutableStateOf("Client files not downloaded yet.") }
+    var installError by rememberSaveable { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -440,7 +445,7 @@ private fun SetupScreen(
         PageHeading(
             eyebrow = "LAUNCHER SETUP · TEST BUILD",
             title = "Prepare to play.",
-            subtitle = "This test build is locked to Minecraft Java Edition 1.21.11 so you can review the launcher interface."
+            subtitle = "NixMC is locked to Minecraft Java Edition 1.21.11. Download the official client JAR as the first installation step."
         )
 
         Card(
@@ -452,7 +457,7 @@ private fun SetupScreen(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("TEST VERSION", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                Text("FIXED TEST VERSION", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -463,19 +468,53 @@ private fun SetupScreen(
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("Minecraft Java Edition", color = NixMuted, fontSize = 12.sp)
                         Text("1.21.11", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-                        Text("Fixed for GUI testing", color = NixAccent, fontSize = 12.sp)
+                        Text("Official Mojang client", color = NixAccent, fontSize = 12.sp)
                     }
                     Icon(Icons.Default.CheckCircle, contentDescription = "Fixed test version", tint = NixAccent, modifier = Modifier.size(28.dp))
                 }
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isDownloading = true
+                            installError = false
+                            installStatus = "Connecting to Mojang…"
+                            try {
+                                val result = `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context) { status ->
+                                    installStatus = status
+                                }
+                                installStatus = "Client JAR verified and saved: " + result.absolutePath
+                            } catch (error: Exception) {
+                                installError = true
+                                installStatus = error.message ?: "Download failed. Check your internet connection and retry."
+                            } finally {
+                                isDownloading = false
+                            }
+                        }
+                    },
+                    enabled = !isDownloading,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (isDownloading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF10150C)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    } else {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (isDownloading) "DOWNLOADING CLIENT…" else "DOWNLOAD 1.21.11 CLIENT")
+                }
                 Text(
-                    "Version selection is disabled in this test build. This lets us focus on checking layout, navigation, and profile screens.",
-                    color = NixMuted,
+                    installStatus,
+                    color = if (installError) MaterialTheme.colorScheme.error else NixMuted,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
-                if (selectedVersion != "1.21.11") {
-                    Text("The saved version will be reset to 1.21.11 for this build.", color = NixMuted, fontSize = 12.sp)
-                }
             }
         }
 
@@ -488,19 +527,19 @@ private fun SetupScreen(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("IMPLEMENTATION STATUS", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
-                SetupRow("Android app shell", "Implemented", true)
-                SetupRow("Home / Profile / Settings UI", "Ready to review", true)
-                SetupRow("Test version lock", "1.21.11", true)
-                SetupRow("Game file installer", "Not implemented", false)
-                SetupRow("Java runtime integration", "Not implemented", false)
-                SetupRow("Rendering and touch controls", "Not implemented", false)
-                SetupRow("Game launch process", "Not implemented", false)
+                Text("LAUNCH READINESS", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                SetupRow("Android app and GUI", "Implemented", true)
+                SetupRow("Version lock", "1.21.11", true)
+                SetupRow("Official client JAR + SHA-1 check", "Available above", true)
+                SetupRow("Libraries and asset downloads", "Next step", false)
+                SetupRow("Android Java 21 runtime", "Not integrated", false)
+                SetupRow("Graphics renderer and touch controls", "Not integrated", false)
+                SetupRow("Game launch process", "Not ready", false)
             }
         }
 
         Text(
-            "This build is intended to test the launcher GUI. It does not install or launch Minecraft yet.",
+            "This downloads and verifies the official client JAR only. Minecraft cannot launch until libraries/assets, a compatible Java 21 runtime, and Android graphics/input integration are in place.",
             color = NixMuted,
             fontSize = 13.sp,
             lineHeight = 19.sp
