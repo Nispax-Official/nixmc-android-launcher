@@ -1,4 +1,4 @@
-package in.nispax.nixmc.profile
+package `in`.nispax.nixmc.profile
 
 import android.content.Context
 
