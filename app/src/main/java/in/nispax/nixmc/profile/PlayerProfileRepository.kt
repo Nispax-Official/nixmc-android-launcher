@@ -45,9 +45,18 @@ class PlayerProfileRepository(context: Context) {
         return true
     }
 
+    fun loadSelectedVersion(): String? = preferences.getString(KEY_SELECTED_VERSION, null)
+
+    fun saveSelectedVersion(versionId: String): Boolean {
+        if (!versionId.matches(Regex("[0-9]+\\.[0-9]+(?:\\.[0-9]+)?"))) return false
+        preferences.edit().putString(KEY_SELECTED_VERSION, versionId).apply()
+        return true
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "nixmc_profile"
         const val KEY_USERNAME = "player_name"
+        const val KEY_SELECTED_VERSION = "selected_minecraft_version"
         const val DEFAULT_USERNAME = "NixPlayer"
     }
 }

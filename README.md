@@ -4,7 +4,7 @@ NixMC is an early-stage, mobile-first launcher project for Minecraft Java Editio
 
 ## Current milestone
 
-The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. The active offline profile name is editable, validated, and persisted locally using Android's private app preferences. Unit tests cover the player-name validation rules, and GitHub Actions runs the unit tests and builds a debug APK on pushes and pull requests.
+The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. The active offline profile name is editable, validated, and persisted locally. The Setup screen fetches the official Mojang Java Edition version manifest, lists recent stable releases, and persists the selected version. Unit tests cover player-name validation, and GitHub Actions runs tests and builds a debug APK on pushes and pull requests.
 
 ## Android configuration
 
@@ -35,7 +35,7 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 
 ## Not implemented yet
 
-- Minecraft version metadata, asset, library, and game-file downloads
+- Downloading selected Minecraft version metadata, assets, libraries, and game files
 - Compatible Java runtime provisioning/execution on Android
 - Rendering and input integration
 - Connecting saved profiles to launch arguments

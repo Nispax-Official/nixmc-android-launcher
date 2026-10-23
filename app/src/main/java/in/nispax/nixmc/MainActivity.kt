@@ -25,11 +25,13 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,8 +57,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import `in`.nispax.nixmc.version.MinecraftVersionCatalog
+import `in`.nispax.nixmc.version.MinecraftVersion
 import `in`.nispax.nixmc.profile.PlayerNameValidator
-import in.nispax.nixmc.profile.PlayerProfileRepository
+import `in`.nispax.nixmc.profile.PlayerProfileRepository
 
 private val NixBackground = Color(0xFF0B0D12)
 private val NixSurface = Color(0xFF151922)
@@ -74,7 +79,9 @@ class MainActivity : ComponentActivity() {
             NixMCTheme {
                 NixMCApp(
                     initialUsername = profileRepository.loadUsername(),
-                    saveUsername = profileRepository::saveUsername
+                    initialSelectedVersion = profileRepository.loadSelectedVersion(),
+                    saveUsername = profileRepository::saveUsername,
+                    saveSelectedVersion = profileRepository::saveSelectedVersion
                 )
             }
         }
@@ -108,11 +115,14 @@ private enum class AppScreen(val label: String, val icon: ImageVector) {
 @Composable
 private fun NixMCApp(
     initialUsername: String,
-    saveUsername: (String) -> Boolean
+    initialSelectedVersion: String?,
+    saveUsername: (String) -> Boolean,
+    saveSelectedVersion: (String) -> Boolean
 ) {
     var currentScreen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
     var username by rememberSaveable { mutableStateOf(initialUsername) }
     var draftUsername by rememberSaveable { mutableStateOf(initialUsername) }
+    var selectedVersion by rememberSaveable { mutableStateOf(initialSelectedVersion ?: "latest") }
     var feedback by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackIsError by rememberSaveable { mutableStateOf(false) }
 
@@ -171,7 +181,13 @@ private fun NixMCApp(
                     feedbackIsError = feedbackIsError
                 )
 
-                AppScreen.SETUP -> SetupScreen(onOpenProfile = { currentScreen = AppScreen.PROFILE })
+                AppScreen.SETUP -> SetupScreen(
+                    selectedVersion = selectedVersion,
+                    onVersionSelected = { version ->
+                        if (saveSelectedVersion(version)) selectedVersion = version
+                    },
+                    onOpenProfile = { currentScreen = AppScreen.PROFILE }
+                )
                 AppScreen.SETTINGS -> SettingsScreen()
             }
         }
@@ -410,7 +426,16 @@ private fun ProfileScreen(
 }
 
 @Composable
-private fun SetupScreen(onOpenProfile: () -> Unit) {
+private fun SetupScreen(
+    selectedVersion: String,
+    onVersionSelected: (String) -> Unit,
+    onOpenProfile: () -> Unit
+) {
+    var versions by rememberSaveable { mutableStateOf(emptyList<MinecraftVersion>()) }
+    var isLoading by rememberSaveable { mutableStateOf(false) }
+    var loadError by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -431,11 +456,96 @@ private fun SetupScreen(onOpenProfile: () -> Unit) {
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                Text("MINECRAFT VERSION", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                Text(
+                    if (selectedVersion == "latest") "Latest release (not selected yet)" else selectedVersion,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Fetch the official Mojang Java Edition version manifest to browse stable releases.",
+                    color = NixMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isLoading = true
+                            loadError = null
+                            try {
+                                versions = MinecraftVersionCatalog.fetchLatestReleases()
+                                if (versions.isEmpty()) loadError = "No release versions were returned."
+                            } catch (error: Exception) {
+                                loadError = error.message ?: "Could not load the version catalog. Check your connection."
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    },
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF10150C)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (isLoading) "LOADING RELEASES..." else "LOAD OFFICIAL RELEASES")
+                }
+                if (loadError != null) {
+                    Text(loadError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+                versions.forEach { version ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (selectedVersion == version.id) Color(0xFF202C28) else NixSurfaceRaised,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(version.id, fontWeight = FontWeight.SemiBold)
+                            Text("Released \${version.releaseTime.take(10)}", color = NixMuted, fontSize = 11.sp)
+                        }
+                        if (selectedVersion == version.id) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = NixAccent)
+                        } else {
+                            OutlinedButton(onClick = { onVersionSelected(version.id) }) {
+                                Text("SELECT")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = NixSurface)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("IMPLEMENTATION STATUS", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
                 SetupRow("Android app shell", "Implemented", true)
                 SetupRow("Offline profile storage", "Implemented", true)
-                SetupRow("Minecraft version installer", "Not implemented", false)
+                SetupRow("Official release catalog", "Implemented", true)
+                SetupRow("Game file installer", "Next", false)
                 SetupRow("Java runtime integration", "Not implemented", false)
                 SetupRow("Rendering and touch controls", "Not implemented", false)
                 SetupRow("Game launch process", "Not implemented", false)
@@ -443,7 +553,7 @@ private fun SetupScreen(onOpenProfile: () -> Unit) {
         }
 
         Text(
-            "NixMC will not show a fake Launch button: game launching becomes available only after the runtime, game files, and rendering path are integrated.",
+            "Selecting a version saves your preference only. It does not download the game yet; installation, runtime, and rendering still need integration.",
             color = NixMuted,
             fontSize = 13.sp,
             lineHeight = 19.sp
