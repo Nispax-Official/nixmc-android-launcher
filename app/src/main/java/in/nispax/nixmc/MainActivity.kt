@@ -439,15 +439,15 @@ private fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var isDownloading by rememberSaveable { mutableStateOf(false) }
-    var isInstallingRuntime by rememberSaveable { mutableStateOf(false) }
-    var installStatus by rememberSaveable { mutableStateOf("Game files not downloaded yet.") }
-    var runtimeStatus by rememberSaveable { mutableStateOf("Java 21 runtime not installed.") }
-    var installError by rememberSaveable { mutableStateOf(false) }
-    var runtimeError by rememberSaveable { mutableStateOf(false) }
-    var isCheckingLaunchPlan by rememberSaveable { mutableStateOf(false) }
-    var launchPlanStatus by rememberSaveable { mutableStateOf("Launch plan not checked yet.") }
-    var launchPlanError by rememberSaveable { mutableStateOf(false) }
+    var isDownloading by rememberSaveable("0.3.1", "isDownloading") { mutableStateOf(false) }
+    var isInstallingRuntime by rememberSaveable("0.3.1", "isInstallingRuntime") { mutableStateOf(false) }
+    var installStatus by rememberSaveable("0.3.1", "installStatus") { mutableStateOf("Game files not verified yet. Tap install or Check Launch Readiness.") }
+    var runtimeStatus by rememberSaveable("0.3.1", "runtimeStatus") { mutableStateOf("Java 21 runtime has not been checked in build 0.3.1.") }
+    var installError by rememberSaveable("0.3.1", "installError") { mutableStateOf(false) }
+    var runtimeError by rememberSaveable("0.3.1", "runtimeError") { mutableStateOf(false) }
+    var isCheckingLaunchPlan by rememberSaveable("0.3.1", "isCheckingLaunchPlan") { mutableStateOf(false) }
+    var launchPlanStatus by rememberSaveable("0.3.1", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.3.1.") }
+    var launchPlanError by rememberSaveable("0.3.1", "launchPlanError") { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -457,9 +457,16 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         PageHeading(
-            eyebrow = "LAUNCHER SETUP · TEST BUILD",
+            eyebrow = "LAUNCHER SETUP · BUILD 0.3.1",
             title = "Prepare to play.",
-            subtitle = "NixMC is locked to Minecraft Java Edition 1.21.11. Install the official client, libraries, and assets for this version."
+            subtitle = "NixMC 0.3.1 includes refreshed install verification and detailed Java startup diagnostics. Locked to Minecraft Java Edition 1.21.11."
+        )
+        Text(
+            "BUILD CHECK: 0.3.1 · If this label is not visible, the previous APK is still installed.",
+            color = NixAccent,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.2.sp
         )
 
         Card(
@@ -497,7 +504,7 @@ private fun SetupScreen(
                                 val result = `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context) { status ->
                                     installStatus = status
                                 }
-                                installStatus = "Client JAR verified and saved: " + result.absolutePath
+                                installStatus = "Official client, libraries, and assets verified. Client JAR: " + result.absolutePath
                             } catch (error: Exception) {
                                 installError = true
                                 installStatus = error.message ?: "Download failed. Check your internet connection and retry."
@@ -731,7 +738,7 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "0.2.0")
+                InfoRow("App version", "0.3.1 (build 3)")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")

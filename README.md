@@ -14,6 +14,7 @@ The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings na
 - Minimum Android SDK: 26 (Android 8.0)
 - Compile / target SDK: 35
 - Java bytecode target: 17
+- App test version: 0.3.1 (version code 3)
 - Android Gradle Plugin: 8.9.2
 - Gradle build version used in CI: 8.11.1
 
@@ -42,4 +43,4 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 - Microsoft account authentication for services that require it
 - Installation integrity checks, progress, and error recovery
 
-The launch-readiness action now re-verifies the cached install and repairs missing/corrupt official libraries and assets before reporting file status. Runtime startup probes include Android linker diagnostics and configure the extracted JRE library paths. NixMC still cannot launch Minecraft until the Java process is started through a working Android-compatible launch/native bridge and graphics/input integration is implemented and tested.
+Build 0.3.1 resets saved setup statuses so old errors from an earlier APK are not restored, labels itself visibly on the Setup screen, re-verifies the cached install and repairs missing/corrupt official libraries and assets before reporting file status, and includes Android linker diagnostics for runtime startup failures. NixMC still cannot launch Minecraft until the Java process is started through a working Android-compatible launch/native bridge and graphics/input integration is implemented and tested.
