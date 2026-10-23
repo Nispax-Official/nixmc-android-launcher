@@ -46,6 +46,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -431,7 +432,7 @@ private fun SetupScreen(
     onVersionSelected: (String) -> Unit,
     onOpenProfile: () -> Unit
 ) {
-    var versions by rememberSaveable { mutableStateOf(emptyList<MinecraftVersion>()) }
+    var versions by remember { mutableStateOf(emptyList<MinecraftVersion>()) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var loadError by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -477,7 +478,11 @@ private fun SetupScreen(
                             loadError = null
                             try {
                                 versions = MinecraftVersionCatalog.fetchLatestReleases()
-                                if (versions.isEmpty()) loadError = "No release versions were returned."
+                                if (versions.isEmpty()) {
+                                    loadError = "No release versions were returned."
+                                } else if (selectedVersion == "latest") {
+                                    onVersionSelected(versions.first().id)
+                                }
                             } catch (error: Exception) {
                                 loadError = error.message ?: "Could not load the version catalog. Check your connection."
                             } finally {
