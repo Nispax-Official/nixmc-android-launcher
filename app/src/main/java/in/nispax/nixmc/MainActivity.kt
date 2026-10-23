@@ -1,6 +1,8 @@
 package `in`.nispax.nixmc
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -595,6 +597,47 @@ private fun SetupScreen(
             fontSize = 13.sp,
             lineHeight = 19.sp
         )
+
+        val amethystInstalled = remember {
+            context.packageManager.getLaunchIntentForPackage("org.angelauramc.amethyst") != null
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = NixSurfaceRaised)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("PLAY WHILE NIXMC ENGINE IS IN DEVELOPMENT", color = NixMuted, fontSize = 10.sp, letterSpacing = 1.3.sp)
+                Text(
+                    "Amethyst is a separate Android Java Edition launcher with its own runtime and graphics engine. This handoff does not launch Minecraft inside NixMC or share NixMC's downloaded files.",
+                    color = NixMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+                OutlinedButton(
+                    onClick = {
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage("org.angelauramc.amethyst")
+                        if (launchIntent != null) {
+                            context.startActivity(launchIntent)
+                        } else {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://nightly.link/AngelAuraMC/Amethyst-Android/workflows/android/v3_openjdk/app-debug%20%28recommended%29.zip")
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(if (amethystInstalled) "OPEN AMETHYST (SEPARATE APP)" else "GET AMETHYST ENGINE")
+                }
+            }
+        }
 
         Button(
             onClick = onOpenProfile,
