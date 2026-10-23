@@ -58,9 +58,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
-import `in`.nispax.nixmc.version.MinecraftVersionCatalog
-import `in`.nispax.nixmc.version.MinecraftVersion
 import `in`.nispax.nixmc.profile.PlayerNameValidator
 import `in`.nispax.nixmc.profile.PlayerProfileRepository
 
@@ -75,12 +72,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val profileRepository = PlayerProfileRepository(applicationContext)
+        profileRepository.saveSelectedVersion("1.21.11")
 
         setContent {
             NixMCTheme {
                 NixMCApp(
                     initialUsername = profileRepository.loadUsername(),
-                    initialSelectedVersion = profileRepository.loadSelectedVersion(),
+                    initialSelectedVersion = "1.21.11",
                     saveUsername = profileRepository::saveUsername,
                     saveSelectedVersion = profileRepository::saveSelectedVersion
                 )
@@ -432,11 +430,6 @@ private fun SetupScreen(
     onVersionSelected: (String) -> Unit,
     onOpenProfile: () -> Unit
 ) {
-    var versions by remember { mutableStateOf(emptyList<MinecraftVersion>()) }
-    var isLoading by rememberSaveable { mutableStateOf(false) }
-    var loadError by rememberSaveable { mutableStateOf<String?>(null) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -445,9 +438,9 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         PageHeading(
-            eyebrow = "LAUNCHER SETUP",
+            eyebrow = "LAUNCHER SETUP · TEST BUILD",
             title = "Prepare to play.",
-            subtitle = "NixMC's Android foundation is in place. The game installation pipeline is the next major milestone."
+            subtitle = "This test build is locked to Minecraft Java Edition 1.21.11 so you can review the launcher interface."
         )
 
         Card(
@@ -459,80 +452,29 @@ private fun SetupScreen(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("MINECRAFT VERSION", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                Text("TEST VERSION", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF202C28), RoundedCornerShape(14.dp))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Minecraft Java Edition", color = NixMuted, fontSize = 12.sp)
+                        Text("1.21.11", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("Fixed for GUI testing", color = NixAccent, fontSize = 12.sp)
+                    }
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Fixed test version", tint = NixAccent, modifier = Modifier.size(28.dp))
+                }
                 Text(
-                    if (selectedVersion == "latest") "Latest release (not selected yet)" else selectedVersion,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Fetch the official Mojang Java Edition version manifest to browse stable releases.",
+                    "Version selection is disabled in this test build. This lets us focus on checking layout, navigation, and profile screens.",
                     color = NixMuted,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
-                Button(
-                    onClick = {
-                        scope.launch {
-                            isLoading = true
-                            loadError = null
-                            try {
-                                versions = MinecraftVersionCatalog.fetchLatestReleases()
-                                if (versions.isEmpty()) {
-                                    loadError = "No release versions were returned."
-                                } else if (selectedVersion == "latest") {
-                                    onVersionSelected(versions.first().id)
-                                }
-                            } catch (error: Exception) {
-                                loadError = error.message ?: "Could not load the version catalog. Check your connection."
-                            } finally {
-                                isLoading = false
-                            }
-                        }
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = Color(0xFF10150C)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                    } else {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(if (isLoading) "LOADING RELEASES..." else "LOAD OFFICIAL RELEASES")
-                }
-                if (loadError != null) {
-                    Text(loadError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-                versions.forEach { version ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                if (selectedVersion == version.id) Color(0xFF202C28) else NixSurfaceRaised,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(version.id, fontWeight = FontWeight.SemiBold)
-                            Text("Released \${version.releaseTime.take(10)}", color = NixMuted, fontSize = 11.sp)
-                        }
-                        if (selectedVersion == version.id) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = NixAccent)
-                        } else {
-                            OutlinedButton(onClick = { onVersionSelected(version.id) }) {
-                                Text("SELECT")
-                            }
-                        }
-                    }
+                if (selectedVersion != "1.21.11") {
+                    Text("The saved version will be reset to 1.21.11 for this build.", color = NixMuted, fontSize = 12.sp)
                 }
             }
         }
@@ -548,9 +490,9 @@ private fun SetupScreen(
             ) {
                 Text("IMPLEMENTATION STATUS", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
                 SetupRow("Android app shell", "Implemented", true)
-                SetupRow("Offline profile storage", "Implemented", true)
-                SetupRow("Official release catalog", "Implemented", true)
-                SetupRow("Game file installer", "Next", false)
+                SetupRow("Home / Profile / Settings UI", "Ready to review", true)
+                SetupRow("Test version lock", "1.21.11", true)
+                SetupRow("Game file installer", "Not implemented", false)
                 SetupRow("Java runtime integration", "Not implemented", false)
                 SetupRow("Rendering and touch controls", "Not implemented", false)
                 SetupRow("Game launch process", "Not implemented", false)
@@ -558,7 +500,7 @@ private fun SetupScreen(
         }
 
         Text(
-            "Selecting a version saves your preference only. It does not download the game yet; installation, runtime, and rendering still need integration.",
+            "This build is intended to test the launcher GUI. It does not install or launch Minecraft yet.",
             color = NixMuted,
             fontSize = 13.sp,
             lineHeight = 19.sp
