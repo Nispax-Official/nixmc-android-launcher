@@ -297,7 +297,7 @@ private fun HomeScreen(
                     Text("GAME INSTALLATION", fontSize = 11.sp, color = NixMuted, letterSpacing = 1.5.sp)
                 }
                 Text("Minecraft Java Edition", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("The installer and runtime are not connected yet.", color = NixMuted, fontSize = 13.sp, lineHeight = 19.sp)
+                Text("Install official 1.21.11 game files from Setup. Runtime and graphics integration are still in development.", color = NixMuted, fontSize = 13.sp, lineHeight = 19.sp)
                 OutlinedButton(
                     onClick = onOpenSetup,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -446,7 +446,7 @@ private fun SetupScreen(
         PageHeading(
             eyebrow = "LAUNCHER SETUP · TEST BUILD",
             title = "Prepare to play.",
-            subtitle = "NixMC is locked to Minecraft Java Edition 1.21.11. Download the official client JAR as the first installation step."
+            subtitle = "NixMC is locked to Minecraft Java Edition 1.21.11. Install the official client, libraries, and assets for this version."
         )
 
         Card(
@@ -508,7 +508,7 @@ private fun SetupScreen(
                         Icon(Icons.Default.Download, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(if (isDownloading) "DOWNLOADING CLIENT…" else "DOWNLOAD 1.21.11 CLIENT")
+                    Text(if (isDownloading) "INSTALLING GAME FILES…" else "INSTALL 1.21.11 GAME FILES")
                 }
                 Text(
                     installStatus,
@@ -531,8 +531,8 @@ private fun SetupScreen(
                 Text("LAUNCH READINESS", color = NixMuted, fontSize = 11.sp, letterSpacing = 1.6.sp)
                 SetupRow("Android app and GUI", "Implemented", true)
                 SetupRow("Version lock", "1.21.11", true)
-                SetupRow("Official client JAR + SHA-1 check", "Available above", true)
-                SetupRow("Libraries and asset downloads", "Next step", false)
+                SetupRow("Client JAR + SHA-1 check", "Implemented", true)
+                SetupRow("Library and asset downloads", "Implemented", true)
                 SetupRow("Android Java 21 runtime", "Not integrated", false)
                 SetupRow("Graphics renderer and touch controls", "Not integrated", false)
                 SetupRow("Game launch process", "Not ready", false)
@@ -540,7 +540,7 @@ private fun SetupScreen(
         }
 
         Text(
-            "This downloads and verifies the official client JAR only. Minecraft cannot launch until libraries/assets, a compatible Java 21 runtime, and Android graphics/input integration are in place.",
+            "The installer downloads and verifies the client, regular libraries, and asset objects. Minecraft still cannot launch until a compatible Android Java 21 runtime, native library handling, graphics renderer, and touch controls are integrated.",
             color = NixMuted,
             fontSize = 13.sp,
             lineHeight = 19.sp

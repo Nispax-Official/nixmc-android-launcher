@@ -64,7 +64,8 @@ object MinecraftClientInstaller {
         val librariesDir = File(gameDir, "libraries")
         val libraries = metadata.optJSONArray("libraries")
         if (libraries != null) {
-            val artifacts = mutableListOf<Triple<String, String, Long>>()
+            data class LibraryArtifact(val url: String, val path: String, val sha1: String, val size: Long)
+            val artifacts = mutableListOf<LibraryArtifact>()
             for (i in 0 until libraries.length()) {
                 val library = libraries.getJSONObject(i)
                 // Only regular JVM artifacts are downloaded here. Native classifiers
@@ -73,7 +74,7 @@ object MinecraftClientInstaller {
                 val url = artifact.optString("url")
                 val path = artifact.optString("path")
                 if (!url.startsWith("https://") || path.isBlank() || path.contains("..")) continue
-                artifacts += Triple(url, path, artifact.optLong("size", -1L))
+                artifacts += LibraryArtifact(url, path, artifact.optString("sha1"), artifact.optLong("size", -1L))
             }
             onStatus("Installing ${artifacts.size} library files…")
             val gate = Semaphore(4)
@@ -81,10 +82,9 @@ object MinecraftClientInstaller {
                 artifacts.mapIndexed { index, item ->
                     async(Dispatchers.IO) {
                         gate.withPermit {
-                            val (url, path, size) = item
-                            val target = File(librariesDir, path)
+                            val target = File(librariesDir, item.path)
                             downloadVerified(
-                                url, target, "", size, {},
+                                item.url, target, item.sha1, item.size, {},
                                 "Library ${index + 1}/${artifacts.size}"
                             )
                         }
@@ -143,7 +143,7 @@ object MinecraftClientInstaller {
                 }
             }.awaitAll()
         }
-        onStatus("Client, libraries, and assets installed and verified. Runtime and renderer are still required to launch.")
+        onStatus("Minecraft 1.21.11 client, libraries, and assets are installed. Android Java 21 runtime and renderer are still required to launch.")
         clientJar
     }
 
