@@ -2,6 +2,11 @@ package `in`.nispax.nixmc.install
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -10,13 +15,14 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Downloads Mojang's official 1.21.11 version metadata and client JAR.
- * This is a verified first install step, not a complete playable installation.
+ * Installs official Minecraft 1.21.11 files from Mojang.
+ * Android Java runtime and renderer integration are separate requirements.
  */
 object MinecraftClientInstaller {
     private const val VERSION = "1.21.11"
     private const val MANIFEST_URL =
         "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+    private const val RESOURCES_URL = "https://resources.download.minecraft.net"
 
     suspend fun downloadClient(
         context: Context,
@@ -38,41 +44,157 @@ object MinecraftClientInstaller {
 
         onStatus("Fetching Minecraft $VERSION metadata…")
         val metadata = getJson(resolvedMetadataUrl)
-        val client = metadata.getJSONObject("downloads").getJSONObject("client")
-        val downloadUrl = client.getString("url")
-        val expectedSha1 = client.getString("sha1").lowercase()
-        val expectedSize = client.getLong("size")
-
         val versionDir = File(context.filesDir, "minecraft/versions/$VERSION")
         check(versionDir.exists() || versionDir.mkdirs()) {
             "Could not create the Minecraft version directory."
         }
-        val metadataFile = File(versionDir, "$VERSION.json")
-        metadataFile.writeText(metadata.toString())
+        File(versionDir, "$VERSION.json").writeText(metadata.toString())
 
-        val target = File(versionDir, "$VERSION.jar")
-        if (target.isFile && target.length() == expectedSize && sha1(target) == expectedSha1) {
-            onStatus("Minecraft $VERSION client is already downloaded and verified.")
-            return@withContext target
+        val client = metadata.getJSONObject("downloads").getJSONObject("client")
+        val clientJar = downloadVerified(
+            client.getString("url"),
+            File(versionDir, "$VERSION.jar"),
+            client.optString("sha1"),
+            client.optLong("size", -1L),
+            onStatus,
+            "Minecraft client"
+        )
+
+        val gameDir = File(context.filesDir, "minecraft")
+        val librariesDir = File(gameDir, "libraries")
+        val libraries = metadata.optJSONArray("libraries")
+        if (libraries != null) {
+            val artifacts = mutableListOf<Triple<String, String, Long>>()
+            for (i in 0 until libraries.length()) {
+                val library = libraries.getJSONObject(i)
+                // Only regular JVM artifacts are downloaded here. Native classifiers
+                // are platform-specific and Linux binaries cannot be used directly on Android.
+                val artifact = library.optJSONObject("downloads")?.optJSONObject("artifact") ?: continue
+                val url = artifact.optString("url")
+                val path = artifact.optString("path")
+                if (!url.startsWith("https://") || path.isBlank() || path.contains("..")) continue
+                artifacts += Triple(url, path, artifact.optLong("size", -1L))
+            }
+            onStatus("Installing ${artifacts.size} library files…")
+            val gate = Semaphore(4)
+            coroutineScope {
+                artifacts.mapIndexed { index, item ->
+                    async(Dispatchers.IO) {
+                        gate.withPermit {
+                            val (url, path, size) = item
+                            val target = File(librariesDir, path)
+                            downloadVerified(
+                                url, target, "", size, {},
+                                "Library ${index + 1}/${artifacts.size}"
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
         }
 
-        val temporary = File(versionDir, "$VERSION.jar.part")
-        onStatus("Downloading Minecraft $VERSION client…")
+        val assetIndexInfo = metadata.optJSONObject("assetIndex")
+            ?: error("Minecraft metadata does not include an asset index.")
+        val assetIndexId = assetIndexInfo.getString("id")
+        val assetIndexUrl = assetIndexInfo.getString("url")
+        val assetIndexSha1 = assetIndexInfo.optString("sha1")
+        val assetIndexFile = File(gameDir, "assets/indexes/$assetIndexId.json")
+        downloadVerified(
+            assetIndexUrl,
+            assetIndexFile,
+            assetIndexSha1,
+            assetIndexInfo.optLong("size", -1L),
+            onStatus,
+            "Asset index"
+        )
+        val assetIndex = JSONObject(assetIndexFile.readText())
+        val objects = assetIndex.getJSONObject("objects")
+        val assetEntries = mutableListOf<Pair<String, String>>()
+        val keys = objects.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val hash = objects.getJSONObject(key).optString("hash")
+            if (hash.matches(Regex("[0-9a-fA-F]{40}"))) assetEntries += key to hash.lowercase()
+        }
+        val assetObjectsDir = File(gameDir, "assets/objects")
+        onStatus("Installing ${assetEntries.size} asset objects…")
+        val assetGate = Semaphore(6)
+        var completed = 0
+        coroutineScope {
+            assetEntries.map { (_, hash) ->
+                async(Dispatchers.IO) {
+                    assetGate.withPermit {
+                        val target = File(assetObjectsDir, "${hash.take(2)}/$hash")
+                        if (!target.isFile || sha1(target) != hash) {
+                            downloadVerified(
+                                "$RESOURCES_URL/${hash.take(2)}/$hash",
+                                target,
+                                hash,
+                                -1L,
+                                {},
+                                "Asset"
+                            )
+                        }
+                        val done = synchronized(assetEntries) { ++completed }
+                        if (done % 50 == 0 || done == assetEntries.size) {
+                            onStatus("Installing asset objects… $done/${assetEntries.size}")
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+        onStatus("Client, libraries, and assets installed and verified. Runtime and renderer are still required to launch.")
+        clientJar
+    }
+
+    private fun downloadVerified(
+        url: String,
+        target: File,
+        expectedSha1: String,
+        expectedSize: Long,
+        onStatus: (String) -> Unit,
+        label: String
+    ): File {
+        require(url.startsWith("https://")) { "Refusing non-HTTPS download URL." }
+        if (target.isFile &&
+            (expectedSize < 0L || target.length() == expectedSize) &&
+            (expectedSha1.isBlank() || sha1(target).equals(expectedSha1, ignoreCase = true))
+        ) return target
+
+        val parent = target.parentFile
+        check(parent != null && (parent.exists() || parent.mkdirs())) {
+            "Could not create install directory."
+        }
+        val temporary = File(parent, target.name + ".part")
+        onStatus("Downloading $label…")
+        val connection = openConnection(url)
         try {
-            downloadToFile(downloadUrl, temporary, expectedSize, onStatus)
-            check(temporary.length() == expectedSize) {
-                "Download size mismatch. Please retry the download."
+            val status = connection.responseCode
+            if (status !in 200..299) error("Download returned HTTP $status.")
+            connection.inputStream.use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
             }
-            check(sha1(temporary) == expectedSha1) {
-                "SHA-1 verification failed. The downloaded file was discarded; please retry."
+            if (expectedSize >= 0L) check(temporary.length() == expectedSize) {
+                "$label size mismatch; retry the download."
             }
+            if (expectedSha1.isNotBlank()) check(
+                sha1(temporary).equals(expectedSha1, ignoreCase = true)
+            ) { "$label SHA-1 verification failed; retry the download." }
             if (target.exists()) target.delete()
-            check(temporary.renameTo(target)) { "Could not finalize the downloaded client JAR." }
-            onStatus("Client downloaded; verifying SHA-1…")
-            target
+            check(temporary.renameTo(target)) { "Could not finalize $label download." }
+            return target
         } catch (error: Exception) {
             temporary.delete()
             throw error
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -87,46 +209,12 @@ object MinecraftClientInstaller {
         }
     }
 
-    private fun downloadToFile(
-        url: String,
-        target: File,
-        expectedSize: Long,
-        onStatus: (String) -> Unit
-    ) {
-        val connection = openConnection(url)
-        try {
-            val status = connection.responseCode
-            if (status !in 200..299) error("Client download returned HTTP $status.")
-            connection.inputStream.use { input ->
-                target.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
-                    var total = 0L
-                    var lastPercent = -1
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        total += count
-                        val percent = if (expectedSize > 0) ((total * 100) / expectedSize).toInt() else -1
-                        if (percent != lastPercent && percent in 0..100) {
-                            lastPercent = percent
-                            onStatus("Downloading Minecraft $VERSION client… $percent%")
-                        }
-                    }
-                    output.flush()
-                }
-            }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private fun openConnection(url: String): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 20_000
-            readTimeout = 60_000
-            setRequestProperty("User-Agent", "NixMC-Android-Launcher/0.2.0")
+            readTimeout = 90_000
+            setRequestProperty("User-Agent", "NixMC-Android-Launcher/0.3.0")
             setRequestProperty("Accept", "application/json, application/octet-stream")
         }
 
