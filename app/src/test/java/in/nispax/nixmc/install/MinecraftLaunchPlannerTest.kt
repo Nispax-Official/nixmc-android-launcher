@@ -125,7 +125,7 @@ class MinecraftLaunchPlannerTest {
     fun rejectsLibraryPathsThatEscapeTheLibrariesDirectory() {
         val root = createFixtureRoot()
         try {
-            val outside = File(root.parentFile, "escape.jar").apply { writeBytes(byteArrayOf(9)) }
+            val outside = File(root, "escape.jar").apply { writeBytes(byteArrayOf(9)) }
             val maliciousLibrary = JSONObject()
                 .put("name", "example:escape:1")
                 .put("downloads", JSONObject().put(
