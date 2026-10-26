@@ -115,7 +115,7 @@ object EngineBridgeVerifier {
         for (nativeFile in manifest.nativeFiles) {
             val relative = nativeFile.relativePath
             if (relative.isBlank() || File(relative).isAbsolute || relative.startsWith("/") ||
-                relative.split('/', '\\\\').any { it == ".." || it.isBlank() }
+                relative.contains(92.toChar()) || relative.split('/').any { it == ".." || it.isBlank() }
             ) {
                 blockers += "Unsafe native bridge file path: $relative"
                 continue
