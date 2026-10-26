@@ -127,4 +127,4 @@ Use the Android device ABI (Build.SUPPORTED_ABIS) as the source of truth. Do not
 
 ## Current truth
 
-The repository currently has official game-file installation, an Android Java 21 runtime installer, a launch planner, and now a testable JVM command builder. It does **not** yet have the versioned Android LWJGL/GLFW bridge or a device-verified graphics/input engine. The next critical engineering decision is selecting and integrating that native stack; a new renderer implementation from scratch is not the right shortcut.
+The repository currently has official game-file installation, an Android Java 21 runtime installer, a launch planner, a testable in-process JLI argument builder, and an ABI-aware native bridge verifier. It does **not** yet have an installed Android LWJGL/GLFW bridge package or a device-verified graphics/input engine. The next critical engineering decision is selecting and integrating that native stack; a new renderer implementation from scratch is not the right shortcut.
