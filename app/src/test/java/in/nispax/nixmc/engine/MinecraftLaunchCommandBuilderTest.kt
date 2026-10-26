@@ -91,7 +91,7 @@ class MinecraftLaunchCommandBuilderTest {
             val classpathIndex = spec.arguments.indexOf("-cp")
             assertTrue(classpathIndex >= 0)
             assertEquals(jar.absolutePath, spec.arguments[classpathIndex + 1])
-            assertEquals("example.Main", spec.arguments[spec.arguments.indexOf("example.Main")])
+            assertTrue(spec.arguments.indexOf("example.Main") > classpathIndex + 1)
         } finally {
             root.deleteRecursively()
         }
