@@ -103,6 +103,49 @@ class MinecraftLaunchCommandBuilderTest {
         }
     }
 
+    @Test
+    fun prependsVerifiedCustomLwjglClassesAheadOfMinecraftClasspath() {
+        val root = Files.createTempDirectory("nixmc-command").toFile()
+        try {
+            val runtimeHome = File(root, "runtime").apply { mkdirs() }
+            val java = File(runtimeHome, "bin/java").apply {
+                parentFile?.mkdirs()
+                writeText("fixture")
+            }
+            val gameDir = File(root, "minecraft").apply { mkdirs() }
+            val clientJar = File(gameDir, "client.jar").apply { writeBytes(byteArrayOf(1)) }
+            val lwjglJar = File(root, "bridge/lwjgl-bridge.jar").apply {
+                parentFile?.mkdirs()
+                writeBytes(byteArrayOf(2))
+            }
+            val plan = MinecraftLaunchPlan(
+                version = "1.21.11",
+                mainClass = "example.Main",
+                classpath = listOf(clientJar),
+                jvmArguments = listOf("-cp", clientJar.absolutePath),
+                gameArguments = emptyList(),
+                assetIndex = "fixture",
+                gameDirectory = gameDir,
+                missingFiles = emptyList()
+            )
+
+            val spec = MinecraftLaunchCommandBuilder.build(
+                runtime = InstalledJavaRuntime(runtimeHome, java, 21),
+                plan = plan,
+                bridgeClasspathEntries = listOf(lwjglJar)
+            )
+
+            val classpathIndex = spec.jvmArguments.indexOf("-cp")
+            val actualClasspath = spec.jvmArguments[classpathIndex + 1]
+                .split(File.pathSeparator)
+            assertEquals(lwjglJar.canonicalPath, actualClasspath.first())
+            assertTrue(actualClasspath.contains(clientJar.canonicalPath))
+            assertEquals(1, spec.jvmArguments.count { it == "-cp" })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsIncompleteLaunchPlans() {
         val root = Files.createTempDirectory("nixmc-command").toFile()
