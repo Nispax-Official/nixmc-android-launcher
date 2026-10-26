@@ -57,7 +57,8 @@ object MinecraftLaunchCommandBuilder {
         runtime: InstalledJavaRuntime,
         plan: MinecraftLaunchPlan,
         memory: MinecraftMemoryConfig = MinecraftMemoryConfig(),
-        inheritedEnvironment: Map<String, String> = emptyMap()
+        inheritedEnvironment: Map<String, String> = emptyMap(),
+        bridgeClasspathEntries: List<File> = emptyList()
     ): MinecraftJvmLaunchSpec {
         require(runtime.majorVersion >= 21) {
             "Minecraft 1.21.11 requires Java 21 or newer; installed runtime is Java ${runtime.majorVersion}."
@@ -83,17 +84,54 @@ object MinecraftLaunchCommandBuilder {
         }
 
         val javaHome = runtime.javaExecutable.parentFile?.parentFile ?: runtime.home
+        val bridgeClasspath = bridgeClasspathEntries.map { entry ->
+            val canonical = entry.canonicalFile
+            require(canonical.isFile) {
+                "Verified bridge classpath entry is missing: ${canonical.absolutePath}"
+            }
+            canonical.absolutePath
+        }.distinct()
         val jvmArguments = plan.jvmArguments
             .filterNot { memoryFlag.matches(it) }
             .toMutableList()
 
-        if (!hasExplicitClasspath(jvmArguments)) {
-            require(plan.classpath.isNotEmpty()) { "The launch plan has no classpath entries." }
-            jvmArguments += "-cp"
-            jvmArguments += plan.classpath.joinToString(File.pathSeparator) { it.absolutePath }
+        val classpathFlags = setOf("-cp", "-classpath", "--class-path")
+        val classpathFlagIndex = jvmArguments.indexOfFirst { it in classpathFlags }
+        val inlineClasspathIndex = jvmArguments.indexOfFirst { it.startsWith("--class-path=") }
+        fun prependBridgeClasspath(existing: String): String {
+            require(existing.isNotBlank()) { "The launch metadata has an empty classpath." }
+            return (bridgeClasspath + existing.split(File.pathSeparator).filter { it.isNotBlank() })
+                .distinct()
+                .joinToString(File.pathSeparator)
         }
+
+        when {
+            classpathFlagIndex >= 0 -> {
+                require(classpathFlagIndex + 1 < jvmArguments.size) {
+                    "The launch metadata has a classpath flag without a value."
+                }
+                jvmArguments[classpathFlagIndex + 1] =
+                    prependBridgeClasspath(jvmArguments[classpathFlagIndex + 1])
+            }
+            inlineClasspathIndex >= 0 -> {
+                val current = jvmArguments[inlineClasspathIndex].substringAfter("--class-path=")
+                jvmArguments[inlineClasspathIndex] = "--class-path=${prependBridgeClasspath(current)}"
+            }
+            else -> {
+                val fallbackClasspath = (bridgeClasspath + plan.classpath.map { it.absolutePath }).distinct()
+                require(fallbackClasspath.isNotEmpty()) {
+                    "The launch plan and native bridge provide no classpath entries."
+                }
+                jvmArguments += "-cp"
+                jvmArguments += fallbackClasspath.joinToString(File.pathSeparator)
+            }
+        }
+
         if (jvmArguments.none { it.startsWith("-Djava.io.tmpdir=") }) {
             jvmArguments += "-Djava.io.tmpdir=${temporaryDirectory.absolutePath}"
+        }
+        if (jvmArguments.none { it.startsWith("-Duser.dir=") }) {
+            jvmArguments += "-Duser.dir=${plan.gameDirectory.absolutePath}"
         }
         jvmArguments += "-Xms${memory.minimumMiB}M"
         jvmArguments += "-Xmx${memory.maximumMiB}M"
