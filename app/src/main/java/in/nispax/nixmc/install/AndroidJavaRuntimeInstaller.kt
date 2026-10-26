@@ -17,6 +17,13 @@ data class InstalledJavaRuntime(
     val majorVersion: Int
 )
 
+data class JavaRuntimeStatus(
+    val runtime: InstalledJavaRuntime?,
+    val diagnostic: String
+) {
+    val isReady: Boolean get() = runtime != null
+}
+
 /**
  * Downloads and extracts the Android-specific OpenJDK 21 runtime published for Amethyst.
  * It does not include the native Minecraft graphics bridge or custom LWJGL stack.
@@ -34,6 +41,26 @@ object AndroidJavaRuntimeInstaller {
         "x86" to RuntimeAsset("x86", "9b8c7d10c5f751acb3b33506593da44ece52a0fd03e0b3c283ba08a7f285a40f"),
         "x86_64" to RuntimeAsset("x86_64", "cb88723961f5f9ad63afa1f212eb199816c27cabfd7dc66567bde1d8fb69713b")
     )
+
+    /**
+     * Re-checks a previously installed runtime without downloading anything.
+     * The startup probe runs off the main thread and returns its diagnostic for
+     * the launch-readiness screen.
+     */
+    suspend fun inspectInstalled(filesDir: File): JavaRuntimeStatus = withContext(Dispatchers.IO) {
+        val runtimeRoot = File(filesDir, "minecraft/runtime/java-21")
+        val java = findJava(runtimeRoot)
+            ?: return@withContext JavaRuntimeStatus(null, "Java 21 runtime is not installed.")
+        val probeError = testJava(java)
+        if (probeError != null) {
+            JavaRuntimeStatus(null, "Installed Java runtime failed its startup probe: $probeError")
+        } else {
+            JavaRuntimeStatus(
+                InstalledJavaRuntime(runtimeRoot, java, RUNTIME_VERSION),
+                "Java 21 runtime passed java -version."
+            )
+        }
+    }
 
     suspend fun install(
         filesDir: File,
