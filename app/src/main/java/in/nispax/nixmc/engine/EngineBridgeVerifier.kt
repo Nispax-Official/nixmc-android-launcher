@@ -13,6 +13,8 @@ data class EngineBridgeManifest(
     val maximumJavaMajor: Int,
     val launchEntryClass: String,
     val launchEntryMethod: String,
+    val launchEntryLibrary: String,
+    val nativeLoadOrder: List<String>,
     val nativeFiles: List<BridgeNativeFile>,
     val renderers: List<BridgeRenderer>
 )
@@ -107,16 +109,40 @@ object EngineBridgeVerifier {
         } else if (javaMajorVersion !in manifest.minimumJavaMajor..manifest.maximumJavaMajor) {
             blockers += "Bridge supports Java ${manifest.minimumJavaMajor}–${manifest.maximumJavaMajor}; installed runtime is Java $javaMajorVersion."
         }
-        if (manifest.launchEntryClass.isBlank() || manifest.launchEntryMethod.isBlank()) {
-            blockers += "Bridge launch entry point is incomplete."
+        if (manifest.launchEntryClass != "com.oracle.dalvik.VMLauncher" ||
+            manifest.launchEntryMethod != "launchJVM"
+        ) {
+            blockers += "Unsupported bridge entry point; this build expects com.oracle.dalvik.VMLauncher.launchJVM."
+        }
+        if (manifest.launchEntryLibrary.isBlank()) {
+            blockers += "Bridge launch entry library is missing."
         }
         if (manifest.nativeFiles.isEmpty()) blockers += "Bridge manifest declares no native files."
 
+        val declaredFilePaths = manifest.nativeFiles.map { it.relativePath }.toSet()
+        if (manifest.launchEntryLibrary !in declaredFilePaths) {
+            blockers += "The native launch entry library is not listed in nativeFiles."
+        }
+        if (manifest.nativeLoadOrder.isEmpty()) {
+            blockers += "Bridge manifest does not declare a native library load order."
+        }
+        if (manifest.nativeLoadOrder.lastOrNull() != manifest.launchEntryLibrary) {
+            blockers += "Native load order must end with the launch entry library."
+        }
+        if (manifest.nativeLoadOrder.distinct().size != manifest.nativeLoadOrder.size) {
+            blockers += "Native load order contains duplicate paths."
+        }
+        for (path in manifest.nativeLoadOrder) {
+            if (!isSafeRelativePath(path)) {
+                blockers += "Unsafe native load-order path: $path"
+            } else if (path !in declaredFilePaths) {
+                blockers += "Native load-order entry is not verified by nativeFiles: $path"
+            }
+        }
+
         for (nativeFile in manifest.nativeFiles) {
             val relative = nativeFile.relativePath
-            if (relative.isBlank() || File(relative).isAbsolute || relative.startsWith("/") ||
-                relative.contains(92.toChar()) || relative.split('/').any { it == ".." || it.isBlank() }
-            ) {
+            if (!isSafeRelativePath(relative)) {
                 blockers += "Unsafe native bridge file path: $relative"
                 continue
             }
@@ -159,6 +185,13 @@ object EngineBridgeVerifier {
         return report(canonicalRoot, androidAbi, manifest.bridgeVersion, manifest.renderers, blockers, warnings)
     }
 
+    fun readManifest(bridgeRoot: File): EngineBridgeManifest {
+        val root = bridgeRoot.canonicalFile
+        val file = File(root, MANIFEST_FILE_NAME).canonicalFile
+        require(isInside(root, file) && file.isFile) { "Engine bridge manifest is missing or escapes its directory." }
+        return parseManifest(JSONObject(file.readText()))
+    }
+
     private fun parseManifest(json: JSONObject): EngineBridgeManifest {
         val abis = json.optJSONArray("androidAbis") ?: JSONArray()
         val files = json.optJSONArray("nativeFiles") ?: JSONArray()
@@ -186,10 +219,20 @@ object EngineBridgeVerifier {
             maximumJavaMajor = json.optInt("maximumJavaMajor", -1),
             launchEntryClass = json.optJSONObject("launchEntry")?.optString("class").orEmpty(),
             launchEntryMethod = json.optJSONObject("launchEntry")?.optString("method").orEmpty(),
+            launchEntryLibrary = json.optJSONObject("launchEntry")?.optString("library").orEmpty(),
+            nativeLoadOrder = (0 until (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).length())
+                .map { index -> (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).optString(index) },
             nativeFiles = nativeFiles,
             renderers = rendererList
         )
     }
+
+    private fun isSafeRelativePath(path: String): Boolean =
+        path.isNotBlank() &&
+            !File(path).isAbsolute &&
+            !path.startsWith("/") &&
+            !path.contains(92.toChar()) &&
+            path.split('/').all { it.isNotBlank() && it != "." && it != ".." }
 
     private fun isInside(root: File, child: File): Boolean =
         child == root || child.path.startsWith(root.path + File.separator)
