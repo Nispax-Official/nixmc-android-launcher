@@ -11,7 +11,7 @@ import java.nio.file.Files
 
 class MinecraftLaunchCommandBuilderTest {
     @Test
-    fun buildsAnExactJvmInvocationAndAppliesUserMemorySettings() {
+    fun buildsAnInProcessJliInvocationAndAppliesUserMemorySettings() {
         val root = Files.createTempDirectory("nixmc-command").toFile()
         try {
             val runtimeHome = File(root, "runtime").apply { mkdirs() }
@@ -45,15 +45,20 @@ class MinecraftLaunchCommandBuilderTest {
                 inheritedEnvironment = mapOf("LD_LIBRARY_PATH" to "/custom/native")
             )
 
-            assertEquals(java.absolutePath, spec.command.first())
+            assertEquals("java", spec.launcherArguments.first())
+            assertEquals(java.absolutePath, spec.javaExecutable.absolutePath)
             assertEquals(gameDirectory.absolutePath, spec.workingDirectory.absolutePath)
-            assertTrue(spec.arguments.contains("-Xms512M"))
-            assertTrue(spec.arguments.contains("-Xmx3072M"))
-            assertFalse(spec.arguments.contains("-Xms1G"))
-            assertFalse(spec.arguments.contains("-Xmx4G"))
-            assertEquals(1, spec.arguments.count { it == "-cp" })
-            assertTrue(spec.arguments.contains("net.minecraft.client.main.Main"))
-            assertEquals(listOf("--username", "NixPlayer"), spec.arguments.takeLast(2))
+            assertTrue(spec.jvmArguments.contains("-Xms512M"))
+            assertTrue(spec.jvmArguments.contains("-Xmx3072M"))
+            assertFalse(spec.jvmArguments.contains("-Xms1G"))
+            assertFalse(spec.jvmArguments.contains("-Xmx4G"))
+            assertEquals(1, spec.jvmArguments.count { it == "-cp" })
+            assertEquals("net.minecraft.client.main.Main", spec.mainClass)
+            assertEquals(listOf("--username", "NixPlayer"), spec.gameArguments)
+            assertEquals(
+                listOf("java") + spec.jvmArguments + spec.mainClass + spec.gameArguments,
+                spec.launcherArguments
+            )
             assertTrue(spec.environment["JAVA_HOME"].orEmpty().isNotBlank())
             assertTrue(spec.environment["TMPDIR"].orEmpty().contains(".nixmc/tmp"))
             assertTrue(spec.environment["LD_LIBRARY_PATH"].orEmpty().contains("/custom/native"))
@@ -88,10 +93,11 @@ class MinecraftLaunchCommandBuilderTest {
                 plan
             )
 
-            val classpathIndex = spec.arguments.indexOf("-cp")
+            val classpathIndex = spec.jvmArguments.indexOf("-cp")
             assertTrue(classpathIndex >= 0)
-            assertEquals(jar.absolutePath, spec.arguments[classpathIndex + 1])
-            assertTrue(spec.arguments.indexOf("example.Main") > classpathIndex + 1)
+            assertEquals(jar.absolutePath, spec.jvmArguments[classpathIndex + 1])
+            assertEquals("example.Main", spec.mainClass)
+            assertTrue(spec.launcherArguments.indexOf("example.Main") > classpathIndex + 1)
         } finally {
             root.deleteRecursively()
         }
