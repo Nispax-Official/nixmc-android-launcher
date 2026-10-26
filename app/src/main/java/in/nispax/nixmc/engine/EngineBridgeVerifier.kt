@@ -133,8 +133,9 @@ object EngineBridgeVerifier {
                 blockers += "Required native bridge file is missing: $relative"
                 continue
             }
-            val actual = runCatching { sha256(target) }.getOrElse {
-                blockers += "Could not verify native bridge file $relative: ${it.message ?: "read failed"}"
+            val actual = runCatching { sha256(target) }.getOrNull()
+            if (actual == null) {
+                blockers += "Could not verify native bridge file $relative: read failed"
                 continue
             }
             if (!actual.equals(nativeFile.sha256, ignoreCase = true)) {
@@ -162,18 +163,18 @@ object EngineBridgeVerifier {
         val abis = json.optJSONArray("androidAbis") ?: JSONArray()
         val files = json.optJSONArray("nativeFiles") ?: JSONArray()
         val renderers = json.optJSONArray("renderers") ?: JSONArray()
-        val nativeFiles = (0 until files.length()).mapNotNull { index ->
-            val item = files.optJSONObject(index) ?: return@mapNotNull null
+        val nativeFiles = (0 until files.length()).map { index ->
+            val item = files.optJSONObject(index)
             BridgeNativeFile(
-                relativePath = item.optString("path"),
-                sha256 = item.optString("sha256")
+                relativePath = item?.optString("path").orEmpty(),
+                sha256 = item?.optString("sha256").orEmpty()
             )
         }
-        val rendererList = (0 until renderers.length()).mapNotNull { index ->
-            val item = renderers.optJSONObject(index) ?: return@mapNotNull null
+        val rendererList = (0 until renderers.length()).map { index ->
+            val item = renderers.optJSONObject(index)
             BridgeRenderer(
-                id = item.optString("id"),
-                displayName = item.optString("name")
+                id = item?.optString("id").orEmpty(),
+                displayName = item?.optString("name").orEmpty()
             )
         }
         return EngineBridgeManifest(
