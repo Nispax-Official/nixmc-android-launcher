@@ -71,6 +71,13 @@ class AndroidNativeBridgeLauncher(context: Context) {
             "The bridge classpath contains files which were not verified by the manifest."
         }
 
+        val selectedRenderer = manifest.renderers.singleOrNull { it.id == selectedRendererId }
+            ?: error("Selected renderer is missing or duplicated in the bridge manifest.")
+        val rendererLibrary = File(root, selectedRenderer.library).canonicalFile
+        check(rendererLibrary.isFile && rendererLibrary.path.startsWith(root.path + File.separator)) {
+            "Selected renderer library is missing or escapes the bridge directory."
+        }
+
         val bridgeClasspath = manifest.classpathEntries.map { relative ->
             val file = File(root, relative).canonicalFile
             check(file.isFile && file.path.startsWith(root.path + File.separator)) {
@@ -78,12 +85,18 @@ class AndroidNativeBridgeLauncher(context: Context) {
             }
             file
         }
+        val bridgeNativeDirectory = File(root, "lib/$androidAbi").canonicalFile
+        check(bridgeNativeDirectory.isDirectory && bridgeNativeDirectory.path.startsWith(root.path + File.separator)) {
+            "Android-native bridge library directory is missing."
+        }
         val launchSpec = MinecraftLaunchCommandBuilder.build(
             runtime = runtime,
             plan = plan,
             memory = memory,
             inheritedEnvironment = System.getenv(),
-            bridgeClasspathEntries = bridgeClasspath
+            bridgeClasspathEntries = bridgeClasspath,
+            bridgeNativeLibraryDirectories = listOf(bridgeNativeDirectory),
+            openglLibraryName = rendererLibrary.name
         )
 
         val librariesInLoadOrder = manifest.nativeLoadOrder.map { relative ->
@@ -104,6 +117,8 @@ class AndroidNativeBridgeLauncher(context: Context) {
         val environment = launchSpec.environment.toMutableMap().apply {
             put("NIXMC_RENDERER", selectedRendererId)
             put("LOCAL_RENDERER", selectedRendererId)
+            put("AMETHYST_RENDERER", selectedRendererId)
+            selectedRenderer.environment.forEach { (key, value) -> put(key, value) }
             val existing = get("LD_LIBRARY_PATH").orEmpty()
                 .split(File.pathSeparator)
                 .filter { it.isNotBlank() }
@@ -131,6 +146,9 @@ class AndroidNativeBridgeLauncher(context: Context) {
 
         try {
             environment.forEach { (key, value) -> Os.setenv(key, value, true) }
+            // libpojavexec's JNI_OnLoad looks up this Android-side class and
+            // caches its static method IDs before initializing the runtime JVM.
+            Class.forName("org.lwjgl.glfw.CallbackBridge", true, AndroidNativeBridgeLauncher::class.java.classLoader)
 
             // The bridge must load dependencies in manifest order. The manifest
             // and every file hash are checked before any shared object is mapped.
@@ -156,6 +174,13 @@ class AndroidNativeBridgeLauncher(context: Context) {
                 }
                 loaded += library.absolutePath
             }
+
+            // Renderer initialization happens only after the custom Android
+            // bridge and Java runtime libraries have been mapped.
+            check(JREUtils.dlopen(rendererLibrary.absolutePath)) {
+                "Android linker failed to load renderer ${selectedRenderer.id} (${rendererLibrary.name})."
+            }
+            loaded += rendererLibrary.absolutePath
 
             JREUtils.setupExitMethod(applicationContext)
             JREUtils.initializeHooks()

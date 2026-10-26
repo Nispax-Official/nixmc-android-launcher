@@ -152,8 +152,16 @@ class EngineBridgeVerifierTest {
             .put(JSONObject().put("path", path).put("sha256", hash))
             .put(JSONObject().put("path", classpathPath).put("sha256", classpathHash)))
         .put("renderers", JSONArray()
-            .put(JSONObject().put("id", "gl4es").put("name", "Compatibility"))
-            .put(JSONObject().put("id", "mobileglues").put("name", "Extended OpenGL")))
+            .put(JSONObject()
+                .put("id", "gl4es")
+                .put("name", "Compatibility")
+                .put("library", path)
+                .put("environment", JSONObject().put("LIBGL_ES", "2")))
+            .put(JSONObject()
+                .put("id", "mobileglues")
+                .put("name", "Extended OpenGL")
+                .put("library", path)
+                .put("environment", JSONObject().put("LIBGL_ES", "3"))))
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

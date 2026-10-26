@@ -58,7 +58,9 @@ object MinecraftLaunchCommandBuilder {
         plan: MinecraftLaunchPlan,
         memory: MinecraftMemoryConfig = MinecraftMemoryConfig(),
         inheritedEnvironment: Map<String, String> = emptyMap(),
-        bridgeClasspathEntries: List<File> = emptyList()
+        bridgeClasspathEntries: List<File> = emptyList(),
+        bridgeNativeLibraryDirectories: List<File> = emptyList(),
+        openglLibraryName: String? = null
     ): MinecraftJvmLaunchSpec {
         require(runtime.majorVersion >= 21) {
             "Minecraft 1.21.11 requires Java 21 or newer; installed runtime is Java ${runtime.majorVersion}."
@@ -133,6 +135,34 @@ object MinecraftLaunchCommandBuilder {
         if (jvmArguments.none { it.startsWith("-Duser.dir=") }) {
             jvmArguments += "-Duser.dir=${plan.gameDirectory.absolutePath}"
         }
+
+        val nativeDirectories = bridgeNativeLibraryDirectories.map { directory ->
+            val canonical = directory.canonicalFile
+            require(canonical.isDirectory) {
+                "Android native library directory is missing: ${canonical.absolutePath}"
+            }
+            canonical.absolutePath
+        }.distinct()
+        if (nativeDirectories.isNotEmpty()) {
+            // Mojang's metadata points at desktop Linux native jars on Android.
+            // Override those paths instead of allowing LWJGL to pick up .so files
+            // compiled for glibc/Linux rather than Android's linker.
+            jvmArguments.removeAll {
+                it.startsWith("-Djava.library.path=") ||
+                    it.startsWith("-Dorg.lwjgl.librarypath=")
+            }
+            val nativePath = nativeDirectories.joinToString(File.pathSeparator)
+            jvmArguments += "-Djava.library.path=$nativePath"
+            jvmArguments += "-Dorg.lwjgl.librarypath=$nativePath"
+        }
+        if (!openglLibraryName.isNullOrBlank()) {
+            require(File(openglLibraryName).name == openglLibraryName && openglLibraryName.endsWith(".so")) {
+                "OpenGL renderer must be specified by a shared-library filename."
+            }
+            jvmArguments.removeAll { it.startsWith("-Dorg.lwjgl.opengl.libname=") }
+            jvmArguments += "-Dorg.lwjgl.opengl.libname=$openglLibraryName"
+        }
+
         jvmArguments += "-Xms${memory.minimumMiB}M"
         jvmArguments += "-Xmx${memory.maximumMiB}M"
 

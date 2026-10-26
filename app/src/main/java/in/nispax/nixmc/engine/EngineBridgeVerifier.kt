@@ -27,7 +27,9 @@ data class BridgeFile(
 
 data class BridgeRenderer(
     val id: String,
-    val displayName: String
+    val displayName: String,
+    val library: String,
+    val environment: Map<String, String>
 )
 
 data class EngineBridgeReport(
@@ -196,6 +198,21 @@ object EngineBridgeVerifier {
         if (manifest.renderers.map { it.id }.distinct().size != manifest.renderers.size) {
             blockers += "Bridge manifest contains duplicate renderer IDs."
         }
+        for (renderer in manifest.renderers) {
+            if (!isSafeRelativePath(renderer.library) || !renderer.library.endsWith(".so", ignoreCase = true)) {
+                blockers += "Renderer ${renderer.id} has an unsafe or invalid library path."
+            } else if (renderer.library !in declaredFilePaths) {
+                blockers += "Renderer ${renderer.id} library is not verified by the bridge manifest."
+            }
+            renderer.environment.forEach { (key, value) ->
+                if (!key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) {
+                    blockers += "Renderer ${renderer.id} contains an invalid environment key."
+                }
+                if (value.contains(0.toChar())) {
+                    blockers += "Renderer ${renderer.id} contains a NUL in an environment value."
+                }
+            }
+        }
         if (selectedRendererId != null && manifest.renderers.none { it.id == selectedRendererId }) {
             blockers += "Selected renderer '$selectedRendererId' is not provided by this bridge."
         }
@@ -223,9 +240,18 @@ object EngineBridgeVerifier {
         }
         val rendererList = (0 until renderers.length()).map { index ->
             val item = renderers.optJSONObject(index)
+            val environmentJson = item?.optJSONObject("environment") ?: JSONObject()
+            val environment = linkedMapOf<String, String>()
+            val keys = environmentJson.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                environment[key] = environmentJson.optString(key)
+            }
             BridgeRenderer(
                 id = item?.optString("id").orEmpty(),
-                displayName = item?.optString("name").orEmpty()
+                displayName = item?.optString("name").orEmpty(),
+                library = item?.optString("library").orEmpty(),
+                environment = environment
             )
         }
         return EngineBridgeManifest(

@@ -146,6 +146,50 @@ class MinecraftLaunchCommandBuilderTest {
         }
     }
 
+    @Test
+    fun overridesDesktopNativePathsForTheAndroidBridgeAndSelectedRenderer() {
+        val root = Files.createTempDirectory("nixmc-native-paths").toFile()
+        try {
+            val runtimeHome = File(root, "runtime").apply { mkdirs() }
+            val java = File(runtimeHome, "bin/java").apply {
+                parentFile?.mkdirs()
+                writeText("fixture")
+            }
+            val gameDir = File(root, "minecraft").apply { mkdirs() }
+            val jar = File(gameDir, "client.jar").apply { writeBytes(byteArrayOf(1)) }
+            val androidLibs = File(root, "bridge/lib/arm64-v8a").apply { mkdirs() }
+            val plan = MinecraftLaunchPlan(
+                version = "1.21.11",
+                mainClass = "example.Main",
+                classpath = listOf(jar),
+                jvmArguments = listOf(
+                    "-Djava.library.path=${gameDir.absolutePath}/natives/linux",
+                    "-Dorg.lwjgl.librarypath=${gameDir.absolutePath}/natives/linux",
+                    "-Dorg.lwjgl.opengl.libname=libdesktop.so",
+                    "-cp", jar.absolutePath
+                ),
+                gameArguments = emptyList(),
+                assetIndex = "fixture",
+                gameDirectory = gameDir,
+                missingFiles = emptyList()
+            )
+            val spec = MinecraftLaunchCommandBuilder.build(
+                runtime = InstalledJavaRuntime(runtimeHome, java, 21),
+                plan = plan,
+                bridgeNativeLibraryDirectories = listOf(androidLibs),
+                openglLibraryName = "libng_gl4es.so"
+            )
+            assertFalse(spec.jvmArguments.any { it.contains("natives/linux") })
+            assertEquals(1, spec.jvmArguments.count { it.startsWith("-Djava.library.path=") })
+            assertEquals(1, spec.jvmArguments.count { it.startsWith("-Dorg.lwjgl.librarypath=") })
+            assertTrue(spec.jvmArguments.contains("-Djava.library.path=${androidLibs.canonicalPath}"))
+            assertTrue(spec.jvmArguments.contains("-Dorg.lwjgl.librarypath=${androidLibs.canonicalPath}"))
+            assertTrue(spec.jvmArguments.contains("-Dorg.lwjgl.opengl.libname=libng_gl4es.so"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsIncompleteLaunchPlans() {
         val root = Files.createTempDirectory("nixmc-command").toFile()
