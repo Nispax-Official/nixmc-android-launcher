@@ -11,10 +11,11 @@ The launcher currently implements:
 - Android Java 21 runtime download, archive SHA-256 verification, extraction, and `java -version` startup probe.
 - A Minecraft launch planner with Mojang OS/architecture/feature-rule handling and safe library-path validation.
 - An in-process Java launcher (JLI) argument/environment specification with validated memory bounds and classpath fallback.
-- A native bridge manifest verifier for Android ABI, Java compatibility, native-file SHA-256 integrity, safe paths, and renderer availability.
+- A native bridge manifest verifier for Android ABI/Java compatibility, SHA-256 integrity for both `.so` and custom LWJGL JAR files, explicit native load order, safe paths, and renderer availability.
+- An in-process JLI bridge adapter and JNI compatibility entrypoint, including Android Java runtime native-library resolution/loading and custom LWJGL classpath precedence.
 - Unit tests and GitHub Actions build/test automation.
 
-**Minecraft does not launch from inside NixMC yet.** The native Android LWJGL/GLFW bridge, its ABI-specific renderer libraries, Android surface integration, and touch/gamepad routing are not installed or wired to the new launch spec. The readiness screen is intentionally blocked until these are integrated and verified on a real device.
+**Minecraft does not launch from inside NixMC yet.** The native Android LWJGL/GLFW bridge bundle (real ABI-specific `.so` libraries, patched LWJGL/custom runtime JARs and renderer components), Android game Activity/surface integration, session lifecycle, and touch/gamepad routing are not yet installed or wired end-to-end. The new JLI adapter is an integration seam, not a claim that Minecraft already launches. The readiness screen is intentionally blocked until these are integrated and verified on a real device.
 
 ## Android configuration
 

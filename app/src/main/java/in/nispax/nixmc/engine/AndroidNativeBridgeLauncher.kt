@@ -140,6 +140,23 @@ class AndroidNativeBridgeLauncher(context: Context) {
             }
 
             JREUtils.setLdLibraryPath(environment["LD_LIBRARY_PATH"].orEmpty())
+
+            // Bootstrap the installed Android JRE in-process. The Android
+            // runtime's libjli/libjvm must be mapped before JLI is invoked.
+            val runtimeLibraries = JavaRuntimeLibraryResolver.resolve(
+                launchSpec.javaHome,
+                androidAbi
+            )
+            check(runtimeLibraries.isReady) {
+                "Java runtime native libraries are incomplete: ${runtimeLibraries.blockers.joinToString()}"
+            }
+            for (library in runtimeLibraries.orderedLibraries) {
+                check(JREUtils.dlopen(library.absolutePath)) {
+                    "Android linker failed to load Java runtime library: ${library.absolutePath}"
+                }
+                loaded += library.absolutePath
+            }
+
             JREUtils.setupExitMethod(applicationContext)
             JREUtils.initializeHooks()
 
