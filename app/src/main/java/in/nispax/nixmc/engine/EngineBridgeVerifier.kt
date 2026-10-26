@@ -15,11 +15,12 @@ data class EngineBridgeManifest(
     val launchEntryMethod: String,
     val launchEntryLibrary: String,
     val nativeLoadOrder: List<String>,
-    val nativeFiles: List<BridgeNativeFile>,
+    val files: List<BridgeFile>,
+    val classpathEntries: List<String>,
     val renderers: List<BridgeRenderer>
 )
 
-data class BridgeNativeFile(
+data class BridgeFile(
     val relativePath: String,
     val sha256: String
 )
@@ -117,17 +118,17 @@ object EngineBridgeVerifier {
         if (manifest.launchEntryLibrary.isBlank()) {
             blockers += "Bridge launch entry library is missing."
         }
-        if (manifest.nativeFiles.isEmpty()) blockers += "Bridge manifest declares no native files."
+        if (manifest.files.isEmpty()) blockers += "Bridge manifest declares no files."
 
-        val declaredFilePaths = manifest.nativeFiles.map { it.relativePath }.toSet()
+        val declaredFilePaths = manifest.files.map { it.relativePath }.toSet()
         if (manifest.launchEntryLibrary !in declaredFilePaths) {
-            blockers += "The native launch entry library is not listed in nativeFiles."
+            blockers += "The native launch entry library is not listed in files."
         }
         if (manifest.nativeLoadOrder.isEmpty()) {
             blockers += "Bridge manifest does not declare a native library load order."
         }
-        if (manifest.nativeLoadOrder.lastOrNull() != manifest.launchEntryLibrary) {
-            blockers += "Native load order must end with the launch entry library."
+        if (manifest.launchEntryLibrary !in manifest.nativeLoadOrder) {
+            blockers += "Native load order does not include the launch entry library."
         }
         if (manifest.nativeLoadOrder.distinct().size != manifest.nativeLoadOrder.size) {
             blockers += "Native load order contains duplicate paths."
@@ -136,12 +137,29 @@ object EngineBridgeVerifier {
             if (!isSafeRelativePath(path)) {
                 blockers += "Unsafe native load-order path: $path"
             } else if (path !in declaredFilePaths) {
-                blockers += "Native load-order entry is not verified by nativeFiles: $path"
+                blockers += "Native load-order entry is not verified by files: $path"
+            } else if (!path.endsWith(".so", ignoreCase = true)) {
+                blockers += "Native load-order entry is not a shared library: $path"
+            }
+        }
+        if (manifest.nativeLoadOrder.isEmpty()) blockers += "Bridge manifest declares no native libraries to load."
+
+        if (manifest.classpathEntries.isEmpty()) blockers += "Bridge manifest does not provide custom LWJGL classpath entries."
+        if (manifest.classpathEntries.distinct().size != manifest.classpathEntries.size) {
+            blockers += "Bridge classpath contains duplicate entries."
+        }
+        for (path in manifest.classpathEntries) {
+            if (!isSafeRelativePath(path)) {
+                blockers += "Unsafe bridge classpath path: $path"
+            } else if (path !in declaredFilePaths) {
+                blockers += "Bridge classpath entry is not verified by files: $path"
+            } else if (!path.endsWith(".jar", ignoreCase = true)) {
+                blockers += "Bridge classpath entry is not a JAR: $path"
             }
         }
 
-        for (nativeFile in manifest.nativeFiles) {
-            val relative = nativeFile.relativePath
+        for (bridgeFile in manifest.files) {
+            val relative = bridgeFile.relativePath
             if (!isSafeRelativePath(relative)) {
                 blockers += "Unsafe native bridge file path: $relative"
                 continue
@@ -151,7 +169,7 @@ object EngineBridgeVerifier {
                 blockers += "Native bridge file path escapes the bridge directory: $relative"
                 continue
             }
-            if (!sha256Pattern.matches(nativeFile.sha256)) {
+            if (!sha256Pattern.matches(bridgeFile.sha256)) {
                 blockers += "Native bridge file has an invalid SHA-256 entry: $relative"
                 continue
             }
@@ -164,7 +182,7 @@ object EngineBridgeVerifier {
                 blockers += "Could not verify native bridge file $relative: read failed"
                 continue
             }
-            if (!actual.equals(nativeFile.sha256, ignoreCase = true)) {
+            if (!actual.equals(bridgeFile.sha256, ignoreCase = true)) {
                 blockers += "Native bridge checksum mismatch: $relative"
             }
         }
@@ -194,11 +212,11 @@ object EngineBridgeVerifier {
 
     private fun parseManifest(json: JSONObject): EngineBridgeManifest {
         val abis = json.optJSONArray("androidAbis") ?: JSONArray()
-        val files = json.optJSONArray("nativeFiles") ?: JSONArray()
+        val files = json.optJSONArray("files") ?: JSONArray()
         val renderers = json.optJSONArray("renderers") ?: JSONArray()
         val nativeFiles = (0 until files.length()).map { index ->
             val item = files.optJSONObject(index)
-            BridgeNativeFile(
+            BridgeFile(
                 relativePath = item?.optString("path").orEmpty(),
                 sha256 = item?.optString("sha256").orEmpty()
             )
@@ -222,7 +240,9 @@ object EngineBridgeVerifier {
             launchEntryLibrary = json.optJSONObject("launchEntry")?.optString("library").orEmpty(),
             nativeLoadOrder = (0 until (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).length())
                 .map { index -> (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).optString(index) },
-            nativeFiles = nativeFiles,
+            files = nativeFiles,
+            classpathEntries = (0 until (json.optJSONArray("classpathEntries") ?: JSONArray()).length())
+                .map { index -> (json.optJSONArray("classpathEntries") ?: JSONArray()).optString(index) },
             renderers = rendererList
         )
     }
