@@ -44,3 +44,8 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 - Installation integrity checks, progress, and error recovery
 
 Build 0.3.1 resets saved setup statuses so old errors from an earlier APK are not restored, labels itself visibly on the Setup screen, re-verifies the cached install and repairs missing/corrupt official libraries and assets before reporting file status, and includes Android linker diagnostics for runtime startup failures. NixMC still cannot launch Minecraft until the Java process is started through a working Android-compatible launch/native bridge and graphics/input integration is implemented and tested.
+
+
+## Engine architecture
+
+The runtime and graphics/input engine design, bridge requirements, renderer policy, safety invariants, and staged implementation plan are documented in [docs/ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md). The launch-core command builder prepares a JVM invocation; the Android-native LWJGL/GLFW bridge is still required before Minecraft can actually launch.
