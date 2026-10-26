@@ -6,8 +6,8 @@ import java.io.File
 
 /**
  * User-configurable memory bounds for one Minecraft session.
- * Android 8+ devices may have very different memory budgets, so settings are
- * explicit and validated rather than silently accepting malformed JVM flags.
+ * Android devices have very different memory budgets, so settings are explicit
+ * and validated rather than silently accepting malformed JVM flags.
  */
 data class MinecraftMemoryConfig(
     val minimumMiB: Int = 512,
@@ -22,18 +22,26 @@ data class MinecraftMemoryConfig(
 }
 
 /**
- * A fully resolved JVM invocation. This is intentionally separate from process
- * creation so the launcher can validate and display the exact command before
- * handing it to an Android-native bridge.
+ * A resolved launch request for an in-process Java launcher such as the JLI
+ * bridge used by Android Minecraft launchers. javaExecutable is for runtime
+ * validation/diagnostics; this spec does not spawn it as a child process.
  */
-data class MinecraftProcessSpec(
-    val executable: File,
-    val arguments: List<String>,
+data class MinecraftJvmLaunchSpec(
+    val javaHome: File,
+    val javaExecutable: File,
+    val jvmArguments: List<String>,
+    val mainClass: String,
+    val gameArguments: List<String>,
     val environment: Map<String, String>,
     val workingDirectory: File
 ) {
-    val command: List<String>
-        get() = listOf(executable.absolutePath) + arguments
+    /**
+     * JLI expects argv[0] to be the launcher name, followed by JVM options,
+     * main class, and game arguments. The bridge must apply environment values
+     * and set the working directory before invoking the native launcher.
+     */
+    val launcherArguments: List<String>
+        get() = listOf("java") + jvmArguments + mainClass + gameArguments
 }
 
 object MinecraftLaunchCommandBuilder {
@@ -41,8 +49,8 @@ object MinecraftLaunchCommandBuilder {
     private val memoryFlag = Regex("""^-Xm[sx].*""")
 
     /**
-     * Builds the game command but does not start it. A working command line is
-     * necessary, not sufficient: Minecraft 1.21.x still needs Android-compatible
+     * Builds a Java launcher request but does not invoke it. A valid request is
+     * necessary, not sufficient: Minecraft still needs Android-compatible
      * LWJGL/GLFW natives and a renderer/input bridge before the game can run.
      */
     fun build(
@@ -50,7 +58,7 @@ object MinecraftLaunchCommandBuilder {
         plan: MinecraftLaunchPlan,
         memory: MinecraftMemoryConfig = MinecraftMemoryConfig(),
         inheritedEnvironment: Map<String, String> = emptyMap()
-    ): MinecraftProcessSpec {
+    ): MinecraftJvmLaunchSpec {
         require(runtime.majorVersion >= 21) {
             "Minecraft 1.21.11 requires Java 21 or newer; installed runtime is Java ${runtime.majorVersion}."
         }
@@ -91,17 +99,24 @@ object MinecraftLaunchCommandBuilder {
         jvmArguments += "-Xmx${memory.maximumMiB}M"
 
         val runtimeLibraryDirectories = listOf(
+            javaHome,
             File(javaHome, "lib"),
+            File(javaHome, "lib/jli"),
             File(javaHome, "lib/server"),
             File(javaHome, "lib/aarch64"),
+            File(javaHome, "lib/aarch64/jli"),
             File(javaHome, "lib/aarch64/server"),
             File(javaHome, "lib/arm"),
+            File(javaHome, "lib/arm/jli"),
             File(javaHome, "lib/arm/server"),
             File(javaHome, "lib/x86"),
+            File(javaHome, "lib/x86/jli"),
             File(javaHome, "lib/x86/server"),
             File(javaHome, "lib/x86_64"),
+            File(javaHome, "lib/x86_64/jli"),
             File(javaHome, "lib/x86_64/server")
         ).filter { it.isDirectory }.map { it.absolutePath }
+
         val nativeDirectory = File(plan.gameDirectory, "natives/${plan.version}")
         val inheritedLibraryPath = inheritedEnvironment["LD_LIBRARY_PATH"]
             ?.takeIf { it.isNotBlank() }
@@ -112,14 +127,21 @@ object MinecraftLaunchCommandBuilder {
 
         val environment = inheritedEnvironment.toMutableMap().apply {
             put("JAVA_HOME", javaHome.absolutePath)
+            put("HOME", plan.gameDirectory.absolutePath)
             put("TMPDIR", temporaryDirectory.absolutePath)
+            put("PATH", listOf(
+                File(javaHome, "bin").absolutePath,
+                inheritedEnvironment["PATH"].orEmpty()
+            ).filter { it.isNotBlank() }.joinToString(File.pathSeparator))
             put("LD_LIBRARY_PATH", libraryPath)
         }
 
-        val arguments = jvmArguments + plan.mainClass + plan.gameArguments
-        return MinecraftProcessSpec(
-            executable = runtime.javaExecutable.absoluteFile,
-            arguments = arguments,
+        return MinecraftJvmLaunchSpec(
+            javaHome = javaHome.absoluteFile,
+            javaExecutable = runtime.javaExecutable.absoluteFile,
+            jvmArguments = jvmArguments,
+            mainClass = plan.mainClass,
+            gameArguments = plan.gameArguments,
             environment = environment,
             workingDirectory = plan.gameDirectory.absoluteFile
         )
