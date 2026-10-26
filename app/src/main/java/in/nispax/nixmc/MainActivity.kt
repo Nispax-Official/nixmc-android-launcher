@@ -1,6 +1,7 @@
 package `in`.nispax.nixmc
 
 import android.os.Bundle
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -65,6 +66,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import `in`.nispax.nixmc.profile.PlayerNameValidator
 import `in`.nispax.nixmc.profile.PlayerProfileRepository
+import `in`.nispax.nixmc.engine.EngineBridgeVerifier
 
 private val NixBackground = Color(0xFF0B0D12)
 private val NixSurface = Color(0xFF151922)
@@ -439,15 +441,18 @@ private fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var isDownloading by rememberSaveable("0.3.1", "isDownloading") { mutableStateOf(false) }
-    var isInstallingRuntime by rememberSaveable("0.3.1", "isInstallingRuntime") { mutableStateOf(false) }
-    var installStatus by rememberSaveable("0.3.1", "installStatus") { mutableStateOf("Game files not verified yet. Tap install or Check Launch Readiness.") }
-    var runtimeStatus by rememberSaveable("0.3.1", "runtimeStatus") { mutableStateOf("Java 21 runtime has not been checked in build 0.3.1.") }
-    var installError by rememberSaveable("0.3.1", "installError") { mutableStateOf(false) }
-    var runtimeError by rememberSaveable("0.3.1", "runtimeError") { mutableStateOf(false) }
-    var isCheckingLaunchPlan by rememberSaveable("0.3.1", "isCheckingLaunchPlan") { mutableStateOf(false) }
-    var launchPlanStatus by rememberSaveable("0.3.1", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.3.1.") }
-    var launchPlanError by rememberSaveable("0.3.1", "launchPlanError") { mutableStateOf(false) }
+    var isDownloading by rememberSaveable("0.4.0", "isDownloading") { mutableStateOf(false) }
+    var isInstallingRuntime by rememberSaveable("0.4.0", "isInstallingRuntime") { mutableStateOf(false) }
+    var installStatus by rememberSaveable("0.4.0", "installStatus") { mutableStateOf("Game files not verified yet. Tap install or Check Launch Readiness.") }
+    var runtimeStatus by rememberSaveable("0.4.0", "runtimeStatus") { mutableStateOf("Java 21 runtime has not been checked in build 0.4.0.") }
+    var installError by rememberSaveable("0.4.0", "installError") { mutableStateOf(false) }
+    var runtimeError by rememberSaveable("0.4.0", "runtimeError") { mutableStateOf(false) }
+    var isCheckingLaunchPlan by rememberSaveable("0.4.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
+    var launchPlanStatus by rememberSaveable("0.4.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.4.0.") }
+    var launchPlanError by rememberSaveable("0.4.0", "launchPlanError") { mutableStateOf(false) }
+    var gameFilesVerified by rememberSaveable("0.4.0", "gameFilesVerified") { mutableStateOf(false) }
+    var runtimeCheckPassed by rememberSaveable("0.4.0", "runtimeCheckPassed") { mutableStateOf(false) }
+    var bridgeManifestPassed by rememberSaveable("0.4.0", "bridgeManifestPassed") { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -457,12 +462,12 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         PageHeading(
-            eyebrow = "LAUNCHER SETUP · BUILD 0.3.1",
+            eyebrow = "LAUNCHER SETUP · BUILD 0.4.0",
             title = "Prepare to play.",
-            subtitle = "NixMC 0.3.1 includes refreshed install verification and detailed Java startup diagnostics. Locked to Minecraft Java Edition 1.21.11."
+            subtitle = "NixMC 0.4.0 includes refreshed install verification and detailed Java startup diagnostics. Locked to Minecraft Java Edition 1.21.11."
         )
         Text(
-            "BUILD CHECK: 0.3.1 · If this label is not visible, the previous APK is still installed.",
+            "BUILD CHECK: 0.4.0 · If this label is not visible, the previous APK is still installed.",
             color = NixAccent,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
@@ -499,14 +504,17 @@ private fun SetupScreen(
                         scope.launch {
                             isDownloading = true
                             installError = false
+                            gameFilesVerified = false
                             installStatus = "Connecting to Mojang…"
                             try {
                                 val result = `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context) { status ->
                                     installStatus = status
                                 }
+                                gameFilesVerified = true
                                 installStatus = "Official client, libraries, and assets verified. Client JAR: " + result.absolutePath
                             } catch (error: Exception) {
                                 installError = true
+                                gameFilesVerified = false
                                 installStatus = error.message ?: "Download failed. Check your internet connection and retry."
                             } finally {
                                 isDownloading = false
@@ -547,9 +555,11 @@ private fun SetupScreen(
                                 val runtime = `in`.nispax.nixmc.install.AndroidJavaRuntimeInstaller.install(context.filesDir) { status ->
                                     runtimeStatus = status
                                 }
+                                runtimeCheckPassed = true
                                 runtimeStatus = "Java ${runtime.majorVersion} passed its startup check."
                             } catch (error: Exception) {
                                 runtimeError = true
+                                runtimeCheckPassed = false
                                 runtimeStatus = error.message ?: "Java runtime installation failed."
                             } finally {
                                 isInstallingRuntime = false
@@ -589,29 +599,56 @@ private fun SetupScreen(
                         scope.launch {
                             isCheckingLaunchPlan = true
                             launchPlanError = false
+                            gameFilesVerified = false
+                            runtimeCheckPassed = false
+                            bridgeManifestPassed = false
                             launchPlanStatus = "Verifying and repairing installed game files…"
                             try {
-                                // Re-run the idempotent installer before checking. It verifies cached files
-                                // and downloads any missing/corrupt libraries or assets left by an interrupted run.
+                                // Repair cached client/libraries/assets first, then inspect all engine prerequisites.
                                 withContext(Dispatchers.IO) {
                                     `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context)
                                 }
-                                launchPlanStatus = "Game files verified. Checking launch arguments…"
+                                launchPlanStatus = "Game files verified. Checking Java runtime and engine bridge…"
                                 val plan = withContext(Dispatchers.IO) {
                                     `in`.nispax.nixmc.install.MinecraftLaunchPlanner.create(
                                         File(context.filesDir, "minecraft"),
-                                        username
+                                        username,
+                                        architecture = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
                                     )
                                 }
-                                launchPlanStatus = if (plan.missingFiles.isEmpty()) {
-                                    "Game files resolve to ${plan.mainClass}. The Android-native graphics/launch bridge is still missing."
-                                } else {
-                                    "Still missing ${plan.missingFiles.size} required file(s). First: ${plan.missingFiles.take(3).joinToString()}"
+                                gameFilesVerified = plan.isComplete
+
+                                val runtimeCheck = `in`.nispax.nixmc.install.AndroidJavaRuntimeInstaller
+                                    .inspectInstalled(context.filesDir)
+                                runtimeCheckPassed = runtimeCheck.isReady
+
+                                val bridgeCheck = withContext(Dispatchers.IO) {
+                                    EngineBridgeVerifier.inspect(
+                                        bridgeRoot = File(context.filesDir, "minecraft/engine/bridge"),
+                                        androidAbi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+                                        javaMajorVersion = runtimeCheck.runtime?.majorVersion
+                                    )
                                 }
-                                launchPlanError = plan.missingFiles.isNotEmpty()
+                                bridgeManifestPassed = bridgeCheck.isReady
+
+                                val blockers = buildList {
+                                    if (!plan.isComplete) {
+                                        add("Game files missing: ${plan.missingFiles.take(3).joinToString()}")
+                                    }
+                                    if (!runtimeCheck.isReady) add(runtimeCheck.diagnostic)
+                                    addAll(bridgeCheck.blockers.take(3))
+                                    // The contract is ready for integration, but no in-process native launcher,
+                                    // Android surface renderer, or touch-input session is wired into NixMC yet.
+                                    add("Minecraft launch is still blocked: the in-process Java/LWJGL/GLFW bridge and game-session renderer are not integrated.")
+                                }
+                                launchPlanStatus = blockers.joinToString(separator = " ")
+                                launchPlanError = true
                             } catch (error: Exception) {
                                 launchPlanError = true
-                                launchPlanStatus = "Repair failed: " + (error.message ?: "Check your internet connection and retry.")
+                                gameFilesVerified = false
+                                runtimeCheckPassed = false
+                                bridgeManifestPassed = false
+                                launchPlanStatus = "Readiness check failed: " + (error.message ?: "Check the install and retry.")
                             } finally {
                                 isCheckingLaunchPlan = false
                             }
@@ -650,9 +687,23 @@ private fun SetupScreen(
                 SetupRow("Version lock", "1.21.11", true)
                 SetupRow("Client JAR + SHA-1 check", "Implemented", true)
                 SetupRow("Library and asset downloads", "Implemented", true)
-                SetupRow("Android Java 21 runtime", "Not integrated", false)
+                SetupRow(
+                    "Official client, libraries, and assets",
+                    if (gameFilesVerified) "Verified" else "Not checked",
+                    gameFilesVerified
+                )
+                SetupRow(
+                    "Android Java 21 runtime",
+                    if (runtimeCheckPassed) "Startup probe passed" else "Not verified",
+                    runtimeCheckPassed
+                )
+                SetupRow(
+                    "Native bridge manifest",
+                    if (bridgeManifestPassed) "Files verified" else "Missing / invalid",
+                    bridgeManifestPassed
+                )
                 SetupRow("Graphics renderer and touch controls", "Not integrated", false)
-                SetupRow("Game launch process", "Not ready", false)
+                SetupRow("Game launch process", "Blocked", false)
             }
         }
 
@@ -738,7 +789,7 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "0.3.1 (build 3)")
+                InfoRow("App version", "0.4.0 (build 3)")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")
