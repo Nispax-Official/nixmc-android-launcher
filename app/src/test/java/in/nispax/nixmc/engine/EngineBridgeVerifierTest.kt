@@ -73,9 +73,15 @@ class EngineBridgeVerifierTest {
         val root = File(parent, "bridge").apply { mkdirs() }
         try {
             val outside = File(parent, "outside.so").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            val jar = File(root, "classpath/lwjgl-bridge.jar").apply {
+                parentFile?.mkdirs()
+                writeBytes(byteArrayOf(7, 7, 7))
+            }
             val manifest = validManifest(
                 path = "../outside.so",
-                hash = sha256(outside)
+                hash = sha256(outside),
+                classpathPath = "classpath/lwjgl-bridge.jar",
+                classpathHash = sha256(jar)
             )
             File(root, EngineBridgeVerifier.MANIFEST_FILE_NAME).writeText(manifest.toString())
 
@@ -110,11 +116,27 @@ class EngineBridgeVerifierTest {
             parentFile?.mkdirs()
             writeBytes(byteArrayOf(3, 1, 4, 1, 5, 9))
         }
+        val jar = File(root, "classpath/lwjgl-bridge.jar").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(2, 7, 1, 8))
+        }
         File(root, EngineBridgeVerifier.MANIFEST_FILE_NAME)
-            .writeText(validManifest("lib/arm64-v8a/libnixbridge.so", sha256(native)).toString())
+            .writeText(
+                validManifest(
+                    "lib/arm64-v8a/libnixbridge.so",
+                    sha256(native),
+                    "classpath/lwjgl-bridge.jar",
+                    sha256(jar)
+                ).toString()
+            )
     }
 
-    private fun validManifest(path: String, hash: String) = JSONObject()
+    private fun validManifest(
+        path: String,
+        hash: String,
+        classpathPath: String,
+        classpathHash: String
+    ) = JSONObject()
         .put("schemaVersion", 1)
         .put("bridgeVersion", "0.1.0-test")
         .put("androidAbis", JSONArray().put("arm64-v8a"))
@@ -125,7 +147,10 @@ class EngineBridgeVerifierTest {
             .put("method", "launchJVM")
             .put("library", path))
         .put("nativeLoadOrder", JSONArray().put(path))
-        .put("nativeFiles", JSONArray().put(JSONObject().put("path", path).put("sha256", hash)))
+        .put("classpathEntries", JSONArray().put(classpathPath))
+        .put("files", JSONArray()
+            .put(JSONObject().put("path", path).put("sha256", hash))
+            .put(JSONObject().put("path", classpathPath).put("sha256", classpathHash)))
         .put("renderers", JSONArray()
             .put(JSONObject().put("id", "gl4es").put("name", "Compatibility"))
             .put(JSONObject().put("id", "mobileglues").put("name", "Extended OpenGL")))
