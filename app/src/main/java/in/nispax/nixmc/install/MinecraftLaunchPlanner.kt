@@ -106,7 +106,7 @@ object MinecraftLaunchPlanner {
             "version_type" to "release",
             "natives_directory" to File(gameDirectory, "natives/$VERSION").absolutePath,
             "launcher_name" to "NixMC",
-            "launcher_version" to "0.3.1",
+            "launcher_version" to "0.4.0",
             "classpath" to classpath.joinToString(File.pathSeparator) { it.absolutePath },
             "library_directory" to librariesRoot.absolutePath
         )
