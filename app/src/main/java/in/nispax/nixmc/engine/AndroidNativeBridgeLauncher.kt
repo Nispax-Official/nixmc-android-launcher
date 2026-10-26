@@ -3,11 +3,12 @@ package `in`.nispax.nixmc.engine
 import android.content.Context
 import android.system.Os
 import android.view.Surface
+import com.oracle.dalvik.VMLauncher
 import `in`.nispax.nixmc.install.InstalledJavaRuntime
+import `in`.nispax.nixmc.install.MinecraftLaunchPlan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.kdt.pojavlaunch.utils.JREUtils
-import com.oracle.dalvik.VMLauncher
 import java.io.File
 
 data class NativeBridgeLaunchResult(
@@ -19,12 +20,14 @@ data class NativeBridgeLaunchResult(
 )
 
 /**
- * Invokes a verified Android Minecraft bridge through the in-process Java
- * launcher (JLI). This is deliberately not wired to the UI until a real,
- * trusted bridge bundle and compatible renderer have been installed.
+ * Invokes the Android-compatible Java launcher in-process through the verified
+ * JNI bridge. The patched LWJGL JARs from the bridge manifest are prepended to
+ * Minecraft's classpath so their GLFW wrappers take precedence over desktop
+ * implementations. Call from a background coroutine, never the main thread.
  *
- * Native JLI runs synchronously until the game JVM exits. Invoke this from a
- * background coroutine/thread, never from the Android main thread.
+ * A compatible bridge package and a valid game surface are required; neither
+ * is currently bundled in NixMC, so this entrypoint fails closed until those
+ * dependencies are installed.
  */
 class AndroidNativeBridgeLauncher(context: Context) {
     private val applicationContext = context.applicationContext
@@ -33,15 +36,14 @@ class AndroidNativeBridgeLauncher(context: Context) {
         bridgeRoot: File,
         androidAbi: String,
         runtime: InstalledJavaRuntime,
-        launchSpec: MinecraftJvmLaunchSpec,
+        plan: MinecraftLaunchPlan,
         selectedRendererId: String,
-        surface: Surface
+        surface: Surface,
+        memory: MinecraftMemoryConfig = MinecraftMemoryConfig()
     ): NativeBridgeLaunchResult = withContext(Dispatchers.IO) {
         require(surface.isValid) { "The Android game surface is not valid." }
         require(runtime.majorVersion >= 21) { "Minecraft 1.21.11 requires Java 21 or newer." }
-        require(runtime.javaExecutable.canonicalFile == launchSpec.javaExecutable.canonicalFile) {
-            "The launch specification was prepared for a different Java executable."
-        }
+        require(runtime.javaExecutable.isFile) { "The installed Java executable is missing." }
 
         val report = EngineBridgeVerifier.inspect(
             bridgeRoot = bridgeRoot,
@@ -61,7 +63,29 @@ class AndroidNativeBridgeLauncher(context: Context) {
             "The installed bridge entry point is not compatible with this NixMC build."
         }
 
-        val verifiedPaths = manifest.files.associate { it.relativePath to it.sha256 }
+        val verifiedPaths = manifest.files.map { it.relativePath }.toSet()
+        check(manifest.launchEntryLibrary in manifest.nativeLoadOrder) {
+            "The configured launch entry library is not in the native load order."
+        }
+        check(verifiedPaths.containsAll(manifest.classpathEntries)) {
+            "The bridge classpath contains files which were not verified by the manifest."
+        }
+
+        val bridgeClasspath = manifest.classpathEntries.map { relative ->
+            val file = File(root, relative).canonicalFile
+            check(file.isFile && file.path.startsWith(root.path + File.separator)) {
+                "Bridge classpath file is missing or escapes its directory: $relative"
+            }
+            file
+        }
+        val launchSpec = MinecraftLaunchCommandBuilder.build(
+            runtime = runtime,
+            plan = plan,
+            memory = memory,
+            inheritedEnvironment = System.getenv(),
+            bridgeClasspathEntries = bridgeClasspath
+        )
+
         val librariesInLoadOrder = manifest.nativeLoadOrder.map { relative ->
             val file = File(root, relative).canonicalFile
             check(file.isFile && file.path.startsWith(root.path + File.separator)) {
@@ -69,11 +93,9 @@ class AndroidNativeBridgeLauncher(context: Context) {
             }
             file
         }
-        check(librariesInLoadOrder.any { it.absolutePath == File(root, manifest.launchEntryLibrary).canonicalPath }) {
-            "The configured launch entry library is not in the native load order."
-        }
-        check(verifiedPaths.keys.containsAll(manifest.classpathEntries)) {
-            "The bridge classpath contains files which were not verified by the manifest."
+        val entryLibrary = File(root, manifest.launchEntryLibrary).canonicalFile
+        check(librariesInLoadOrder.any { it == entryLibrary }) {
+            "The launch entry library is missing from the verified native load order."
         }
 
         val bridgeLibraryDirectories = librariesInLoadOrder
@@ -97,7 +119,7 @@ class AndroidNativeBridgeLauncher(context: Context) {
         require(invalidEnvironmentKey == null) {
             "Invalid native environment variable name: $invalidEnvironmentKey"
         }
-        require(environment.values.none { it.contains('\u0000') }) {
+        require(environment.values.none { it.contains(0.toChar()) }) {
             "Native environment values must not contain NUL characters."
         }
 
@@ -109,15 +131,18 @@ class AndroidNativeBridgeLauncher(context: Context) {
 
         try {
             environment.forEach { (key, value) -> Os.setenv(key, value, true) }
-            JREUtils.setLdLibraryPath(environment["LD_LIBRARY_PATH"].orEmpty())
 
+            // The bridge must load dependencies in manifest order. The manifest
+            // and every file hash are checked before any shared object is mapped.
             for (library in librariesInLoadOrder) {
                 JREUtils.loadNativeLibrary(library.absolutePath)
                 loaded += library.absolutePath
             }
 
+            JREUtils.setLdLibraryPath(environment["LD_LIBRARY_PATH"].orEmpty())
             JREUtils.setupExitMethod(applicationContext)
             JREUtils.initializeHooks()
+
             val chdirResult = JREUtils.chdir(launchSpec.workingDirectory.absolutePath)
             check(chdirResult == 0) {
                 "The native bridge could not switch to the Minecraft game directory (code $chdirResult)."
