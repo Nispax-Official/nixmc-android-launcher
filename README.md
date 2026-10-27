@@ -2,13 +2,13 @@
 
 NixMC is an early-stage, mobile-first launcher project for Minecraft Java Edition.
 
-## Current milestone — 0.4.0 engine foundation
+## Current milestone — 0.5.0 download reliability and engine foundation
 
 The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. A local offline profile is editable, validated, and persisted. The test version is locked to Minecraft Java Edition 1.21.11.
 
 The launcher currently implements:
-- Official client JAR, libraries, asset index, and asset-object download with publisher SHA-1 verification.
-- Android Java 21 runtime download, archive SHA-256 verification, extraction, and `java -version` startup probe.
+- User-initiated foreground downloads with Android notification progress, persistent status, cancellation, bounded concurrency, retry-on-network-failure, HTTPS-only redirects, publisher SHA-1 verification, and atomic replacement.
+- Android Java 21 runtime download with pinned SHA-256 verification, bounded safe extraction into a staging directory, atomic activation, and a `java -version` startup probe.
 - A Minecraft launch planner with Mojang OS/architecture/feature-rule handling and safe library-path validation.
 - An in-process Java launcher (JLI) argument/environment specification with validated memory bounds and classpath fallback.
 - A native bridge manifest verifier for Android ABI/Java compatibility, SHA-256 integrity for both `.so` and custom LWJGL JAR files, explicit native load order, safe paths, and renderer availability.
@@ -19,13 +19,15 @@ The launcher currently implements:
 
 ## Android configuration
 
+All Minecraft game files, downloaded assets, libraries, runtime archives, and installed runtime files live under the single app-private `filesDir/minecraft` directory. NixMC does not write downloaded game files to shared storage. Android removes app-private files when the app is uninstalled, and app backup is disabled so large game files are not unexpectedly restored.
+
 - Namespace / application ID: `in.nispax.nixmc`
 - Language: Kotlin
 - UI: Jetpack Compose + Material 3
 - Minimum Android SDK: 26 (Android 8.0)
 - Compile / target SDK: 35
 - Java bytecode target: 17
-- App version: 0.4.0 (version code 4)
+- App version: 0.5.0 (version code 5)
 - Android Gradle Plugin: 8.9.2
 - Gradle build version used in CI: 8.11.1
 
@@ -49,6 +51,6 @@ NixMC currently stores a local player name only. Names are restricted to 3–16 
 
 See [docs/ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md) for the Runtime Engine and Graphics/Input Engine design, bridge manifest contract, renderer strategy, ABI targets, safety requirements, and staged integration plan.
 
-The next critical milestone is selecting and legally integrating a compatible upstream Android Minecraft bridge stack. PojavLauncher/Amethyst contain the hard native pieces (JLI bridge, custom LWJGL/GLFW, renderer backends, Android surface and input routing); they cannot be replaced by desktop Linux native libraries or by calling `ProcessBuilder("java")`. Their code and bundled components require a license/notice audit before redistribution.
+The next critical milestone is selecting and integrating a compatible Android-native Minecraft bridge stack. The JLI bridge, custom LWJGL/GLFW compatibility layer, renderer backends, Android surface, and touch-input routing must be implemented or incorporated with a license/notice audit. Desktop Linux native libraries cannot substitute for Android binaries, and calling `ProcessBuilder("java")` alone is not sufficient.
 
 Build 0.4.0 improves launch planning and readiness diagnostics. A complete plan and valid Java runtime are prerequisites, not proof that the game renderer is working. NixMC must not label launch as ready until bridge files are verified, native initialization succeeds, and a real world has been tested with rendering, input, audio, pause/resume, and clean exit.
