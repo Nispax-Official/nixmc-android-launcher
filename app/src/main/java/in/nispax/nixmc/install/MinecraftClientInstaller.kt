@@ -31,6 +31,12 @@ object MinecraftClientInstaller {
             val gameDir = File(context.filesDir, "minecraft").canonicalFile
             check(gameDir.exists() || gameDir.mkdirs()) { "Could not create the private game directory." }
 
+            // Remove abandoned temporary downloads after a crash/force-stop. Complete,
+            // previously verified artifacts remain in place and are reused after hash checks.
+            gameDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".part") }
+                .forEach { it.delete() }
+
             onStatus("Connecting securely to Mojang's version manifest…")
             val manifest = getJson(MANIFEST_URL, label = "Mojang version manifest", onStatus = onStatus)
             val versions = manifest.getJSONArray("versions")
