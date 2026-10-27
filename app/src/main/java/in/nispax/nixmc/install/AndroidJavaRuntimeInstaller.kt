@@ -34,6 +34,7 @@ data class JavaRuntimeStatus(
  */
 object AndroidJavaRuntimeInstaller {
     private const val RUNTIME_VERSION = 21
+    private const val MAX_RUNTIME_ARCHIVE_BYTES = 512L * 1024L * 1024L
     private const val RELEASE_BASE =
         "https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/download/download_jre21/"
 
@@ -177,6 +178,9 @@ object AndroidJavaRuntimeInstaller {
                             val count = input.read(buffer)
                             if (count < 0) break
                             total += count
+                            check(total <= MAX_RUNTIME_ARCHIVE_BYTES) {
+                                "Java runtime archive exceeded the 512 MiB download limit."
+                            }
                             if (length > 0L) check(total <= length) { "Java runtime exceeded its declared download size." }
                             output.write(buffer, 0, count)
                             if (length > 0L) {
