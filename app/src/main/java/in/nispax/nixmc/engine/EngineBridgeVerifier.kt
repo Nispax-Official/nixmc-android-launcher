@@ -54,6 +54,14 @@ data class EngineBridgeReport(
 object EngineBridgeVerifier {
     const val MANIFEST_FILE_NAME = "manifest.json"
     private const val SUPPORTED_SCHEMA_VERSION = 1
+    private const val MAX_MANIFEST_BYTES = 2L * 1024L * 1024L
+    private const val MAX_ABIS = 8
+    private const val MAX_BRIDGE_FILES = 4096
+    private const val MAX_RENDERERS = 8
+    private const val MAX_NATIVE_LOAD_ORDER = 256
+    private const val MAX_CLASSPATH_ENTRIES = 1024
+    private const val MAX_ENVIRONMENT_ENTRIES = 128
+    private const val MAX_RELATIVE_PATH_LENGTH = 512
     private val sha256Pattern = Regex("[0-9a-fA-F]{64}")
 
     fun inspect(
@@ -84,8 +92,14 @@ object EngineBridgeVerifier {
             return report(canonicalRoot, androidAbi, null, emptyList(), blockers, warnings)
         }
 
+        if (manifestFile.length() <= 0L || manifestFile.length() > MAX_MANIFEST_BYTES) {
+            blockers += "Engine bridge manifest is empty or exceeds the 2 MiB safety limit."
+            if (javaMajorVersion == null) blockers += "Java runtime has not passed its startup check."
+            return report(canonicalRoot, androidAbi, null, emptyList(), blockers, warnings)
+        }
+
         val manifest = try {
-            parseManifest(JSONObject(manifestFile.readText()))
+            parseManifest(JSONObject(readManifestText(manifestFile)))
         } catch (error: Exception) {
             blockers += "Engine bridge manifest is invalid: ${error.message ?: error.javaClass.simpleName}"
             if (javaMajorVersion == null) blockers += "Java runtime has not passed its startup check."
@@ -227,10 +241,36 @@ object EngineBridgeVerifier {
         return parseManifest(JSONObject(file.readText()))
     }
 
+    private fun readManifestText(file: File): String {
+        val output = java.io.ByteArrayOutputStream()
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(8192)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_MANIFEST_BYTES) {
+                    "Engine bridge manifest exceeds the 2 MiB safety limit."
+                }
+                output.write(buffer, 0, count)
+            }
+        }
+        return String(output.toByteArray(), Charsets.UTF_8)
+    }
+
     private fun parseManifest(json: JSONObject): EngineBridgeManifest {
         val abis = json.optJSONArray("androidAbis") ?: JSONArray()
         val files = json.optJSONArray("files") ?: JSONArray()
         val renderers = json.optJSONArray("renderers") ?: JSONArray()
+        val nativeLoadOrder = json.optJSONArray("nativeLoadOrder") ?: JSONArray()
+        val classpathEntries = json.optJSONArray("classpathEntries") ?: JSONArray()
+
+        require(abis.length() <= MAX_ABIS) { "Bridge manifest declares too many Android ABIs." }
+        require(files.length() <= MAX_BRIDGE_FILES) { "Bridge manifest declares too many files." }
+        require(renderers.length() <= MAX_RENDERERS) { "Bridge manifest declares too many renderers." }
+        require(nativeLoadOrder.length() <= MAX_NATIVE_LOAD_ORDER) { "Bridge manifest declares too many native libraries." }
+        require(classpathEntries.length() <= MAX_CLASSPATH_ENTRIES) { "Bridge manifest declares too many classpath entries." }
         val nativeFiles = (0 until files.length()).map { index ->
             val item = files.optJSONObject(index)
             BridgeFile(
@@ -241,6 +281,7 @@ object EngineBridgeVerifier {
         val rendererList = (0 until renderers.length()).map { index ->
             val item = renderers.optJSONObject(index)
             val environmentJson = item?.optJSONObject("environment") ?: JSONObject()
+            require(environmentJson.length() <= MAX_ENVIRONMENT_ENTRIES) { "Renderer declares too many environment variables." }
             val environment = linkedMapOf<String, String>()
             val keys = environmentJson.keys()
             while (keys.hasNext()) {
@@ -264,16 +305,17 @@ object EngineBridgeVerifier {
             launchEntryClass = json.optJSONObject("launchEntry")?.optString("class").orEmpty(),
             launchEntryMethod = json.optJSONObject("launchEntry")?.optString("method").orEmpty(),
             launchEntryLibrary = json.optJSONObject("launchEntry")?.optString("library").orEmpty(),
-            nativeLoadOrder = (0 until (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).length())
-                .map { index -> (json.optJSONArray("nativeLoadOrder") ?: JSONArray()).optString(index) },
+            nativeLoadOrder = (0 until nativeLoadOrder.length())
+                .map { index -> nativeLoadOrder.optString(index) },
             files = nativeFiles,
-            classpathEntries = (0 until (json.optJSONArray("classpathEntries") ?: JSONArray()).length())
-                .map { index -> (json.optJSONArray("classpathEntries") ?: JSONArray()).optString(index) },
+            classpathEntries = (0 until classpathEntries.length())
+                .map { index -> classpathEntries.optString(index) },
             renderers = rendererList
         )
     }
 
     private fun isSafeRelativePath(path: String): Boolean =
+        path.length <= MAX_RELATIVE_PATH_LENGTH &&
         path.isNotBlank() &&
             !File(path).isAbsolute &&
             !path.startsWith("/") &&
