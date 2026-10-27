@@ -52,6 +52,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -498,7 +500,7 @@ private fun SetupScreen(
     val installError = downloadState.action == DownloadActions.GAME && (downloadState.isFailed || downloadState.isCanceled)
     val runtimeError = downloadState.action == DownloadActions.JAVA && (downloadState.isFailed || downloadState.isCanceled)
     var isCheckingLaunchPlan by rememberSaveable("0.5.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
-    var launchPlanStatus by rememberSaveable("0.4.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.4.0.") }
+    var launchPlanStatus by rememberSaveable("0.5.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.5.0.") }
     var launchPlanError by rememberSaveable("0.4.0", "launchPlanError") { mutableStateOf(false) }
     var gameFilesVerified by rememberSaveable("0.4.0", "gameFilesVerified") { mutableStateOf(false) }
     var runtimeCheckPassed by rememberSaveable("0.4.0", "runtimeCheckPassed") { mutableStateOf(false) }
