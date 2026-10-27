@@ -24,7 +24,11 @@ object GameStorageAuditor {
 
     fun inspect(gameRoot: File): GameStorageAudit {
         val warnings = mutableListOf<String>()
-        val root = runCatching { gameRoot.canonicalFile }.getOrElse {
+        val absoluteRoot = gameRoot.absoluteFile.normalize()
+        if (Files.isSymbolicLink(absoluteRoot.toPath())) {
+            return GameStorageAudit(absoluteRoot, false, 0, 0L, 0, 1, listOf("Game-data root must not be a symbolic link."))
+        }
+        val root = runCatching { absoluteRoot.canonicalFile }.getOrElse {
             return GameStorageAudit(gameRoot, false, 0, 0L, 0, 0, listOf("Cannot resolve game-data directory."))
         }
         if (Files.isSymbolicLink(root.toPath())) {
@@ -48,7 +52,7 @@ object GameStorageAuditor {
                 return
             }
             val canonical = runCatching { node.canonicalFile }.getOrNull()
-            if (canonical == null || !canonical.path.startsWith(root.path + File.separator)) {
+            if (canonical == null || (canonical != root && !canonical.path.startsWith(root.path + File.separator))) {
                 warnings += "Ignored a path outside the managed game-data directory."
                 return
             }
