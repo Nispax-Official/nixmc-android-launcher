@@ -23,6 +23,7 @@ object MinecraftClientInstaller {
     private const val MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     private const val RESOURCES_URL = "https://resources.download.minecraft.net"
     private const val MAX_ARTIFACT_BYTES = 2L * 1024L * 1024L * 1024L
+    private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private val sha1Pattern = Regex("[0-9a-fA-F]{40}")
 
     suspend fun downloadClient(context: Context, onStatus: (String) -> Unit = {}): File =
@@ -161,13 +162,22 @@ object MinecraftClientInstaller {
         try {
             val status = connection.responseCode
             if (status !in 200..299) error("$label returned HTTP $status.")
+            val advertisedLength = connection.contentLengthLong
+            check(advertisedLength <= MAX_METADATA_BYTES || advertisedLength < 0L) {
+                "$label exceeded the permitted metadata size."
+            }
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(16 * 1024)
+                var total = 0L
                 while (true) {
                     DownloadCancellation.throwIfRequested()
                     val count = input.read(buffer)
                     if (count < 0) break
+                    total += count
+                    check(total <= MAX_METADATA_BYTES) {
+                        "$label exceeded the permitted metadata size."
+                    }
                     output.write(buffer, 0, count)
                 }
                 output.toByteArray()
