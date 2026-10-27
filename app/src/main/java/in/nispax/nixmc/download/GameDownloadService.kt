@@ -12,7 +12,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-`in`.nispax.nixmc.MainActivity
+import `in`.nispax.nixmc.MainActivity
 import `in`.nispax.nixmc.install.AndroidJavaRuntimeInstaller
 import `in`.nispax.nixmc.install.DownloadCancellation
 import `in`.nispax.nixmc.install.MinecraftClientInstaller
