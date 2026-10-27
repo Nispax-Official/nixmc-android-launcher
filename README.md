@@ -7,7 +7,7 @@ NixMC is an early-stage, mobile-first launcher project for Minecraft Java Editio
 The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. A local offline profile is editable, validated, and persisted. The test version is locked to Minecraft Java Edition 1.21.11.
 
 The launcher currently implements:
-- User-initiated foreground downloads with Android notification progress, persistent status, cancellation, bounded concurrency, retry-on-network-failure, HTTPS-only redirects, publisher SHA-1 verification, and atomic replacement.
+- User-initiated foreground downloads with persistent Android notifications, stage-aware progress, cancellation, bounded concurrency, HTTPS-only redirects, publisher-hash verification, atomic replacement, a 16 MiB metadata-response cap, and Android 15 foreground-service timeout handling. Notification diagnostics are private on the lock screen.
 - Android Java 21 runtime download with pinned SHA-256 verification, bounded safe extraction into a staging directory, atomic activation, and a `java -version` startup probe.
 - A Minecraft launch planner with Mojang OS/architecture/feature-rule handling and safe library-path validation.
 - An in-process Java launcher (JLI) argument/environment specification with validated memory bounds and classpath fallback.
