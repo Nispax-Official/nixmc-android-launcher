@@ -2,12 +2,14 @@ package `in`.nispax.nixmc
 
 import android.os.Bundle
 import android.Manifest
+import android.app.NotificationManager
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -460,21 +462,40 @@ private fun SetupScreen(
     }
     var pendingDownloadAction by remember { mutableStateOf<String?>(null) }
     var notificationPermissionMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun startServiceIfNotificationsEnabled(action: String) {
+        val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        val channelDisabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager?.getNotificationChannel(GameDownloadService.CHANNEL_ID)?.importance ==
+                NotificationManager.IMPORTANCE_NONE
+        } else {
+            false
+        }
+        if (!notificationsEnabled || channelDisabled) {
+            notificationPermissionMessage =
+                "Turn on NixMC download notifications in Android settings first. No download was started."
+            return
+        }
+        ContextCompat.startForegroundService(
+            context,
+            android.content.Intent(context, GameDownloadService::class.java).setAction(action)
+        )
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         val action = pendingDownloadAction
         pendingDownloadAction = null
         if (granted && action != null) {
-            ContextCompat.startForegroundService(
-                context,
-                android.content.Intent(context, GameDownloadService::class.java).setAction(action)
-            )
+            startServiceIfNotificationsEnabled(action)
         } else if (!granted) {
             notificationPermissionMessage =
                 "Allow NixMC notifications in Android settings so background download progress and errors stay visible. No download was started."
         }
     }
+
     fun requestBackgroundDownload(action: String) {
         notificationPermissionMessage = null
         if (downloadState.isRunning) return
@@ -485,10 +506,7 @@ private fun SetupScreen(
             pendingDownloadAction = action
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            ContextCompat.startForegroundService(
-                context,
-                android.content.Intent(context, GameDownloadService::class.java).setAction(action)
-            )
+            startServiceIfNotificationsEnabled(action)
         }
     }
     val isDownloading = downloadState.isRunning && downloadState.action == DownloadActions.GAME
@@ -501,7 +519,7 @@ private fun SetupScreen(
     val runtimeError = downloadState.action == DownloadActions.JAVA && (downloadState.isFailed || downloadState.isCanceled)
     var isCheckingLaunchPlan by rememberSaveable("0.5.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
     var launchPlanStatus by rememberSaveable("0.5.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.5.0.") }
-    var launchPlanError by rememberSaveable("0.4.0", "launchPlanError") { mutableStateOf(false) }
+    var launchPlanError by rememberSaveable("0.5.0", "launchPlanError") { mutableStateOf(false) }
     var gameFilesVerified by rememberSaveable("0.4.0", "gameFilesVerified") { mutableStateOf(false) }
     var runtimeCheckPassed by rememberSaveable("0.4.0", "runtimeCheckPassed") { mutableStateOf(false) }
     var bridgeManifestPassed by rememberSaveable("0.5.0", "bridgeManifestPassed") { mutableStateOf(false) }
