@@ -117,7 +117,6 @@ class AndroidNativeBridgeLauncher(context: Context) {
         val environment = launchSpec.environment.toMutableMap().apply {
             put("NIXMC_RENDERER", selectedRendererId)
             put("LOCAL_RENDERER", selectedRendererId)
-            put("AMETHYST_RENDERER", selectedRendererId)
             selectedRenderer.environment.forEach { (key, value) -> put(key, value) }
             val existing = get("LD_LIBRARY_PATH").orEmpty()
                 .split(File.pathSeparator)
