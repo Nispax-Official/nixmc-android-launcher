@@ -87,6 +87,7 @@ object AndroidJavaRuntimeInstaller {
         val legacyArchive = File(File(filesDir, "cache"), fileName)
         legacyArchive.delete()
         File(legacyArchive.parentFile, legacyArchive.name + ".part").delete()
+        legacyArchive.parentFile?.delete() // Succeeds only if the old cache directory is empty.
 
         val existingJava = findJava(runtimeRoot)
         if (existingJava != null) {
