@@ -38,8 +38,7 @@ Components:
 - **Audio adapter** — supplies Android-compatible OpenAL/native audio where the chosen bridge requires it.
 - **Diagnostics** — reports the actual ABI, renderer, GL version/extensions, surface dimensions, bridge version, and native load failures.
 
-NixMC should integrate an established Android Minecraft compatibility stack rather than attempt to reimplement OpenGL, LWJGL, and GLFW from scratch. PojavLauncher/Amethyst document the required custom LWJGL/GLFW work and multiple renderers. Their code and native artifacts must be integrated with an explicit license and attribution audit before any files are copied or bundled:
-- https://github.com/AngelAuraMC/Amethyst-Android
+NixMC should integrate an established Android Minecraft compatibility stack rather than attempt to reimplement OpenGL, LWJGL, and GLFW from scratch. Established Android Java Edition launcher projects document the required custom LWJGL/GLFW work and multiple renderers. Any third-party code and native artifacts must undergo an explicit license and attribution audit before files are copied or bundled:
 - https://github.com/TeamPojavLauncher/PojavLauncher
 - https://pojav.ru/wiki/faq/android/RENDERERS.html
 
@@ -98,7 +97,9 @@ Use the Android device ABI (Build.SUPPORTED_ABIS) as the source of truth. Do not
 - Verify hashes before marking artifacts installed.
 - Use temporary files/directories and atomic rename/swap on successful verification.
 - Do not log Microsoft credentials, access tokens, or full sensitive environment data.
-- Keep launcher UI responsive; downloads, hash checks, extraction, and probes run off the main thread.
+- Keep launcher UI responsive; user-initiated downloads run in a visible foreground service with notification progress, persisted status, cancellation, and a bounded wake lock.
+- Store game and runtime files in app-private `filesDir/minecraft`; do not request broad storage permissions. Disable app backup to avoid restoring large downloaded data unexpectedly.
+- Verify downloaded bytes before activation, reject non-HTTPS redirects, bound archive extraction, and never activate a partial runtime.
 - Bound parallel downloads, output-log size, and renderer diagnostics.
 - Surface specific failures (unsupported ABI, Java probe failure, missing library, incompatible renderer, native linker error) instead of the same generic "launch failed" state.
 
