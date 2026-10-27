@@ -520,7 +520,7 @@ private fun SetupScreen(
     var isCheckingLaunchPlan by rememberSaveable("0.5.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
     var launchPlanStatus by rememberSaveable("0.5.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.5.0.") }
     var launchPlanError by rememberSaveable("0.5.0", "launchPlanError") { mutableStateOf(false) }
-    var gameFilesVerified by rememberSaveable("0.4.0", "gameFilesVerified") { mutableStateOf(false) }
+    var gameFilesVerified by rememberSaveable("0.5.0", "gameFilesVerified") { mutableStateOf(false) }
     var runtimeCheckPassed by rememberSaveable("0.4.0", "runtimeCheckPassed") { mutableStateOf(false) }
     var bridgeManifestPassed by rememberSaveable("0.5.0", "bridgeManifestPassed") { mutableStateOf(false) }
     LaunchedEffect(downloadState.action, downloadState.phase) {
