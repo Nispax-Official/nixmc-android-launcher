@@ -127,6 +127,37 @@ class GameDownloadService : Service() {
         return START_REDELIVER_INTENT
     }
 
+    /**
+     * Android 15 limits dataSync foreground services to six hours per 24-hour
+     * period. Stop promptly when the system signals that limit; the installer
+     * keeps already verified artifacts and discards incomplete .part files.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        DownloadCancellation.request()
+        activeJob?.cancel()
+
+        val state = DownloadStateStore.read(this)
+        val action = activeAction ?: state.action
+        if (action == DownloadActions.GAME || action == DownloadActions.JAVA) {
+            DownloadStateStore.finish(
+                this,
+                action,
+                "FAILED",
+                "Android stopped this long-running download at its foreground-service time limit. Verified files were kept; reopen NixMC and retry."
+            )
+            val finalState = DownloadStateStore.read(this)
+            runCatching {
+                showNotification(
+                    buildNotification(action, finalState.status, finalState.progress, running = false)
+                )
+            }
+        }
+
+        releaseWakeLock()
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf(startId)
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
