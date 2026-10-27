@@ -1,0 +1,79 @@
+name: Bridge contract check
+
+on:
+  push:
+    branches: [main, 'engine/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  callback-contract:
+    name: Check Android callback contract against pinned upstream
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out NixMC
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Fetch pinned Amethyst callback source without executing it
+        env:
+          UPSTREAM_COMMIT: 28d6e12d68121b7dd75f2e841058a6b7cdfe4a29
+        run: |
+          set -euo pipefail
+          git init /tmp/amethyst-source
+          git -C /tmp/amethyst-source remote add origin https://github.com/AngelAuraMC/Amethyst-Android.git
+          git -C /tmp/amethyst-source fetch --depth=1 origin "$UPSTREAM_COMMIT"
+          git -C /tmp/amethyst-source checkout --detach FETCH_HEAD
+
+      - name: Compare required callback hooks and fields
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          local = Path("app/src/main/java/org/lwjgl/glfw/CallbackBridge.java").read_text()
+          upstream = Path("/tmp/amethyst-source/app_pojavlauncher/src/main/java/org/lwjgl/glfw/CallbackBridge.java").read_text()
+
+          methods = (
+              "accessAndroidClipboard",
+              "onGrabStateChanged",
+              "onDirectInputEnable",
+              "getAndroidDPI",
+              "notifyLauncher",
+          )
+          fields = (
+              "windowWidth",
+              "windowHeight",
+              "physicalWidth",
+              "physicalHeight",
+              "sGamepadButtonBuffer",
+              "sGamepadAxisBuffer",
+          )
+
+          errors = []
+          for name in methods:
+              if not re.search(r"\\b" + re.escape(name) + r"\\s*\\(", local):
+                  errors.append("NixMC callback is missing method " + name)
+              if not re.search(r"\\b" + re.escape(name) + r"\\s*\\(", upstream):
+                  errors.append("Pinned upstream callback does not contain expected method " + name)
+          for name in fields:
+              if not re.search(r"\\b" + re.escape(name) + r"\\b", local):
+                  errors.append("NixMC callback is missing field " + name)
+              if not re.search(r"\\b" + re.escape(name) + r"\\b", upstream):
+                  errors.append("Pinned upstream callback does not contain expected field " + name)
+
+          if errors:
+              print("\\n".join(errors))
+              sys.exit(1)
+          print("Minimum callback hook and field names are present.")
+          print("This is a name-level contract check only; it does not certify JNI descriptor, native ABI, renderer, or device compatibility.")
+          PY
