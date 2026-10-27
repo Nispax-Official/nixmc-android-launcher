@@ -43,7 +43,7 @@ object DownloadStateStore {
 
     fun update(context: Context, action: String, status: String) {
         val previous = read(context)
-        val progress = progressFromMessage(status, previous.progress)
+        val progress = DownloadProgressEstimator.estimate(action, status, previous.progress)
         write(context, DownloadState(action, "RUNNING", status.take(500), progress))
     }
 
@@ -63,15 +63,4 @@ object DownloadStateStore {
             .apply()
     }
 
-    private fun progressFromMessage(message: String, oldProgress: Int): Int {
-        val percent = Regex("""\b(\d{1,3})%""").find(message)?.groupValues?.get(1)?.toIntOrNull()
-        if (percent != null) return percent.coerceIn(0, 99)
-        val fraction = Regex("""\b(\d+)\s*/\s*(\d+)\b""").find(message)
-        if (fraction != null) {
-            val completed = fraction.groupValues[1].toLongOrNull() ?: 0L
-            val total = fraction.groupValues[2].toLongOrNull() ?: 0L
-            if (total > 0L) return (5 + completed.coerceAtMost(total) * 90L / total).toInt().coerceIn(5, 95)
-        }
-        return oldProgress.coerceIn(0, 99)
-    }
 }
