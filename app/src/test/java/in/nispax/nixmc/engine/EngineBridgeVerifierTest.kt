@@ -94,6 +94,22 @@ class EngineBridgeVerifierTest {
     }
 
     @Test
+    fun rejectsOversizedBridgeManifestBeforeParsing() {
+        val root = Files.createTempDirectory("nixmc-bridge-large-manifest").toFile()
+        try {
+            File(root, EngineBridgeVerifier.MANIFEST_FILE_NAME).writeBytes(
+                ByteArray(2 * 1024 * 1024 + 1) { ' '.code.toByte() }
+            )
+
+            val report = EngineBridgeVerifier.inspect(root, "arm64-v8a", 21, "gl4es")
+            assertFalse(report.isReady)
+            assertTrue(report.blockers.any { it.contains("2 MiB safety limit") })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun explainsMissingManifestOrUnverifiedRuntime() {
         val root = Files.createTempDirectory("nixmc-bridge").toFile()
         try {
