@@ -44,8 +44,14 @@ class GameDownloadService : Service() {
         val requestedAction = intent?.action
         if (requestedAction == DownloadActions.CANCEL) {
             DownloadCancellation.request()
-            activeJob?.cancel()
-            return START_REDELIVER_INTENT
+            val job = activeJob
+            if (job != null) {
+                job.cancel()
+            } else {
+                stopSelf()
+            }
+            // Never redeliver a Cancel intent as though it were a new download.
+            return START_NOT_STICKY
         }
 
         val action = requestedAction
@@ -113,7 +119,7 @@ class GameDownloadService : Service() {
                 activeJob = null
                 activeAction = null
                 stopForeground(STOP_FOREGROUND_DETACH)
-                stopSelf(startId)
+                stopSelf()
             }
         }
         activeJob = task
