@@ -1,11 +1,13 @@
 package `in`.nispax.nixmc
 
 import android.os.Bundle
+import android.Manifest
 import android.os.Build
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,10 +65,14 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import java.io.File
 import `in`.nispax.nixmc.profile.PlayerNameValidator
 import `in`.nispax.nixmc.profile.PlayerProfileRepository
 import `in`.nispax.nixmc.engine.EngineBridgeVerifier
+import `in`.nispax.nixmc.download.DownloadActions
+import `in`.nispax.nixmc.download.DownloadStateStore
+import `in`.nispax.nixmc.download.GameDownloadService
 
 private val NixBackground = Color(0xFF0B0D12)
 private val NixSurface = Color(0xFF151922)
@@ -305,7 +311,7 @@ private fun HomeScreen(
                     Text("GAME INSTALLATION", fontSize = 11.sp, color = NixMuted, letterSpacing = 1.5.sp)
                 }
                 Text("Minecraft Java Edition", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("Install official 1.21.11 game files from Setup. Runtime and graphics integration are still in development.", color = NixMuted, fontSize = 13.sp, lineHeight = 19.sp)
+                Text("Install verified game files and Java 21. Downloads continue with a visible notification while NixMC is in the background.", color = NixMuted, fontSize = 13.sp, lineHeight = 19.sp)
                 OutlinedButton(
                     onClick = onOpenSetup,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -441,18 +447,66 @@ private fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var isDownloading by rememberSaveable("0.4.0", "isDownloading") { mutableStateOf(false) }
-    var isInstallingRuntime by rememberSaveable("0.4.0", "isInstallingRuntime") { mutableStateOf(false) }
-    var installStatus by rememberSaveable("0.4.0", "installStatus") { mutableStateOf("Game files not verified yet. Tap install or Check Launch Readiness.") }
-    var runtimeStatus by rememberSaveable("0.4.0", "runtimeStatus") { mutableStateOf("Java 21 runtime has not been checked in build 0.4.0.") }
-    var installError by rememberSaveable("0.4.0", "installError") { mutableStateOf(false) }
-    var runtimeError by rememberSaveable("0.4.0", "runtimeError") { mutableStateOf(false) }
-    var isCheckingLaunchPlan by rememberSaveable("0.4.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
+    val downloadState by produceState(
+        initialValue = DownloadStateStore.read(context),
+        key1 = context
+    ) {
+        while (true) {
+            value = DownloadStateStore.read(context)
+            delay(500)
+        }
+    }
+    var pendingDownloadAction by remember { mutableStateOf<String?>(null) }
+    var notificationPermissionMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val action = pendingDownloadAction
+        pendingDownloadAction = null
+        if (granted && action != null) {
+            ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, GameDownloadService::class.java).setAction(action)
+            )
+        } else if (!granted) {
+            notificationPermissionMessage =
+                "Allow NixMC notifications in Android settings so background download progress and errors stay visible. No download was started."
+        }
+    }
+    fun requestBackgroundDownload(action: String) {
+        notificationPermissionMessage = null
+        if (downloadState.isRunning) return
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingDownloadAction = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, GameDownloadService::class.java).setAction(action)
+            )
+        }
+    }
+    val isDownloading = downloadState.isRunning && downloadState.action == DownloadActions.GAME
+    val isInstallingRuntime = downloadState.isRunning && downloadState.action == DownloadActions.JAVA
+    val installStatus = downloadState.takeIf { it.action == DownloadActions.GAME }?.status
+        ?: "Game files not verified yet. Tap install to start a visible background download."
+    val runtimeStatus = downloadState.takeIf { it.action == DownloadActions.JAVA }?.status
+        ?: "Java 21 runtime has not been checked in build 0.5.0."
+    val installError = downloadState.action == DownloadActions.GAME && (downloadState.isFailed || downloadState.isCanceled)
+    val runtimeError = downloadState.action == DownloadActions.JAVA && (downloadState.isFailed || downloadState.isCanceled)
+    var isCheckingLaunchPlan by rememberSaveable("0.5.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
     var launchPlanStatus by rememberSaveable("0.4.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.4.0.") }
     var launchPlanError by rememberSaveable("0.4.0", "launchPlanError") { mutableStateOf(false) }
     var gameFilesVerified by rememberSaveable("0.4.0", "gameFilesVerified") { mutableStateOf(false) }
     var runtimeCheckPassed by rememberSaveable("0.4.0", "runtimeCheckPassed") { mutableStateOf(false) }
-    var bridgeManifestPassed by rememberSaveable("0.4.0", "bridgeManifestPassed") { mutableStateOf(false) }
+    var bridgeManifestPassed by rememberSaveable("0.5.0", "bridgeManifestPassed") { mutableStateOf(false) }
+    LaunchedEffect(downloadState.action, downloadState.phase) {
+        if (downloadState.action == DownloadActions.GAME && downloadState.isComplete) gameFilesVerified = true
+        if (downloadState.action == DownloadActions.JAVA && downloadState.isComplete) runtimeCheckPassed = true
+    }
 
     Column(
         modifier = Modifier
@@ -462,12 +516,12 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         PageHeading(
-            eyebrow = "LAUNCHER SETUP · BUILD 0.4.0",
+            eyebrow = "LAUNCHER SETUP · BUILD 0.5.0",
             title = "Prepare to play.",
-            subtitle = "NixMC 0.4.0 includes refreshed install verification and detailed Java startup diagnostics. Locked to Minecraft Java Edition 1.21.11."
+            subtitle = "NixMC 0.5.0 keeps downloads visible in Android notifications, verifies official hashes, and stores game data privately. Locked to Minecraft Java Edition 1.21.11."
         )
         Text(
-            "BUILD CHECK: 0.4.0 · If this label is not visible, the previous APK is still installed.",
+            "BUILD CHECK: 0.5.0 · If this label is not visible, the previous APK is still installed.",
             color = NixAccent,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
@@ -500,28 +554,8 @@ private fun SetupScreen(
                 }
 
                 Button(
-                    onClick = {
-                        scope.launch {
-                            isDownloading = true
-                            installError = false
-                            gameFilesVerified = false
-                            installStatus = "Connecting to Mojang…"
-                            try {
-                                val result = `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context) { status ->
-                                    installStatus = status
-                                }
-                                gameFilesVerified = true
-                                installStatus = "Official client, libraries, and assets verified. Client JAR: " + result.absolutePath
-                            } catch (error: Exception) {
-                                installError = true
-                                gameFilesVerified = false
-                                installStatus = error.message ?: "Download failed. Check your internet connection and retry."
-                            } finally {
-                                isDownloading = false
-                            }
-                        }
-                    },
-                    enabled = !isDownloading,
+                    onClick = { requestBackgroundDownload(DownloadActions.GAME) },
+                    enabled = !downloadState.isRunning,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -536,7 +570,7 @@ private fun SetupScreen(
                         Icon(Icons.Default.Download, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(if (isDownloading) "INSTALLING GAME FILES…" else "INSTALL 1.21.11 GAME FILES")
+                    Text(if (isDownloading) "DOWNLOADING GAME FILES…" else "INSTALL 1.21.11 GAME FILES")
                 }
                 Text(
                     installStatus,
@@ -544,29 +578,15 @@ private fun SetupScreen(
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
-
+                if (isDownloading && downloadState.progress > 0) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { downloadState.progress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 Button(
-                    onClick = {
-                        scope.launch {
-                            isInstallingRuntime = true
-                            runtimeError = false
-                            runtimeStatus = "Preparing Java 21 runtime…"
-                            try {
-                                val runtime = `in`.nispax.nixmc.install.AndroidJavaRuntimeInstaller.install(context.filesDir) { status ->
-                                    runtimeStatus = status
-                                }
-                                runtimeCheckPassed = true
-                                runtimeStatus = "Java ${runtime.majorVersion} passed its startup check."
-                            } catch (error: Exception) {
-                                runtimeError = true
-                                runtimeCheckPassed = false
-                                runtimeStatus = error.message ?: "Java runtime installation failed."
-                            } finally {
-                                isInstallingRuntime = false
-                            }
-                        }
-                    },
-                    enabled = !isInstallingRuntime,
+                    onClick = { requestBackgroundDownload(DownloadActions.JAVA) },
+                    enabled = !downloadState.isRunning,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -585,7 +605,7 @@ private fun SetupScreen(
                         Icon(Icons.Default.Download, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text(if (isInstallingRuntime) "INSTALLING JAVA 21…" else "INSTALL JAVA 21 RUNTIME")
+                    Text(if (isInstallingRuntime) "DOWNLOADING JAVA 21…" else "INSTALL JAVA 21 RUNTIME")
                 }
                 Text(
                     runtimeStatus,
@@ -593,7 +613,20 @@ private fun SetupScreen(
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
-
+                if (isInstallingRuntime && downloadState.progress > 0) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { downloadState.progress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (notificationPermissionMessage != null) {
+                    Text(
+                        notificationPermissionMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
                 OutlinedButton(
                     onClick = {
                         scope.launch {
@@ -604,11 +637,8 @@ private fun SetupScreen(
                             bridgeManifestPassed = false
                             launchPlanStatus = "Verifying and repairing installed game files…"
                             try {
-                                // Repair cached client/libraries/assets first, then inspect all engine prerequisites.
-                                withContext(Dispatchers.IO) {
-                                    `in`.nispax.nixmc.install.MinecraftClientInstaller.downloadClient(context)
-                                }
-                                launchPlanStatus = "Game files verified. Checking Java runtime and engine bridge…"
+                                // Readiness is read-only. All downloads must use the visible foreground service.
+                                launchPlanStatus = "Checking downloaded game files, Java runtime, and engine bridge…"
                                 val plan = withContext(Dispatchers.IO) {
                                     `in`.nispax.nixmc.install.MinecraftLaunchPlanner.create(
                                         File(context.filesDir, "minecraft"),
@@ -714,47 +744,6 @@ private fun SetupScreen(
             lineHeight = 19.sp
         )
 
-        val amethystInstalled = remember {
-            context.packageManager.getLaunchIntentForPackage("org.angelauramc.amethyst") != null
-        }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = NixSurfaceRaised)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("PLAY WHILE NIXMC ENGINE IS IN DEVELOPMENT", color = NixMuted, fontSize = 10.sp, letterSpacing = 1.3.sp)
-                Text(
-                    "Amethyst is a separate Android Java Edition launcher with its own runtime and graphics engine. This handoff does not launch Minecraft inside NixMC or share NixMC's downloaded files.",
-                    color = NixMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp
-                )
-                OutlinedButton(
-                    onClick = {
-                        val launchIntent = context.packageManager.getLaunchIntentForPackage("org.angelauramc.amethyst")
-                        if (launchIntent != null) {
-                            context.startActivity(launchIntent)
-                        } else {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://nightly.link/AngelAuraMC/Amethyst-Android/workflows/android/v3_openjdk/app-debug%20%28recommended%29.zip")
-                                )
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(if (amethystInstalled) "OPEN AMETHYST (SEPARATE APP)" else "GET AMETHYST ENGINE")
-                }
-            }
-        }
-
         Button(
             onClick = onOpenProfile,
             modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -789,11 +778,12 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "0.4.0 (build 3)")
+                InfoRow("App version", "0.5.0 (build 5)")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")
                 InfoRow("Game runtime", "Not integrated yet")
+                InfoRow("Game data storage", "Private app storage · removed on uninstall")
             }
         }
 
