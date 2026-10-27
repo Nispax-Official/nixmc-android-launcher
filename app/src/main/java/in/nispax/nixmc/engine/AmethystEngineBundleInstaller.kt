@@ -157,7 +157,7 @@ object AmethystEngineBundleInstaller {
             writtenFiles[relative] = sha256(target)
         }
 
-        try {
+        return try {
             val lwjglPrefix = "assets/components/lwjgl3/$lwjglVersion/"
             val cacioPrefix = "assets/components/caciocavallo17/"
             val licensePrefix = "assets/licenses/"
