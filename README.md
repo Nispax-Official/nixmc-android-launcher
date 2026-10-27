@@ -11,7 +11,7 @@ The launcher currently implements:
 - Android Java 21 runtime download with pinned SHA-256 verification, bounded safe extraction into a staging directory, atomic activation, and a `java -version` startup probe.
 - A Minecraft launch planner with Mojang OS/architecture/feature-rule handling and safe library-path validation.
 - An in-process Java launcher (JLI) argument/environment specification with validated memory bounds and classpath fallback.
-- A native bridge manifest verifier for Android ABI/Java compatibility, SHA-256 integrity for both `.so` and custom LWJGL JAR files, explicit native load order, safe paths, and renderer availability.
+- A native bridge manifest verifier with bounded manifest size/entry counts, Android ABI/Java compatibility checks, SHA-256 integrity for `.so` and custom LWJGL JAR files, explicit native load order, safe paths, and renderer availability.
 - An in-process JLI bridge adapter and JNI compatibility entrypoint, including Android Java runtime native-library resolution/loading and custom LWJGL classpath precedence.
 - Unit tests and GitHub Actions build/test automation.
 
