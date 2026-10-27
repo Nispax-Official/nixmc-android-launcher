@@ -61,18 +61,18 @@ jobs:
 
           errors = []
           for name in methods:
-              if not re.search(r"\\b" + re.escape(name) + r"\\s*\\(", local):
+              if not re.search(r"\b" + re.escape(name) + r"\s*\(", local):
                   errors.append("NixMC callback is missing method " + name)
-              if not re.search(r"\\b" + re.escape(name) + r"\\s*\\(", upstream):
+              if not re.search(r"\b" + re.escape(name) + r"\s*\(", upstream):
                   errors.append("Pinned upstream callback does not contain expected method " + name)
           for name in fields:
-              if not re.search(r"\\b" + re.escape(name) + r"\\b", local):
+              if not re.search(r"\b" + re.escape(name) + r"\b", local):
                   errors.append("NixMC callback is missing field " + name)
-              if not re.search(r"\\b" + re.escape(name) + r"\\b", upstream):
+              if not re.search(r"\b" + re.escape(name) + r"\b", upstream):
                   errors.append("Pinned upstream callback does not contain expected field " + name)
 
           if errors:
-              print("\\n".join(errors))
+              print("\n".join(errors))
               sys.exit(1)
           print("Minimum callback hook and field names are present.")
           print("This is a name-level contract check only; it does not certify JNI descriptor, native ABI, renderer, or device compatibility.")
