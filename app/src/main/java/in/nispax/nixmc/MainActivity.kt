@@ -784,7 +784,7 @@ private fun SettingsScreen() {
     var isDownloadingUpdate by remember { mutableStateOf(false) }
     var updateProgress by remember { mutableStateOf(0) }
     var updateStatus by remember {
-        mutableStateOf("Check GitHub for the latest stable NixMC release.")
+        mutableStateOf("Check for a newer successful NixMC GitHub Actions build.")
     }
     var availableUpdate by remember { mutableStateOf<LauncherUpdateRelease?>(null) }
     var verifiedApk by remember { mutableStateOf<File?>(null) }
@@ -824,7 +824,7 @@ private fun SettingsScreen() {
                             isCheckingUpdates = true
                             availableUpdate = null
                             verifiedApk = null
-                            updateStatus = "Checking the latest stable GitHub Release…"
+                            updateStatus = "Checking the latest successful NixMC CI build…"
                             try {
                                 val update = LauncherUpdateManager.checkForUpdate(context)
                                 if (update == null) {
@@ -957,7 +957,7 @@ private fun SettingsScreen() {
         InfoCard(
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = NixBlue) },
             title = "Security and installation",
-            body = "NixMC never silently installs an APK. Updates must come from a stable GitHub Release, match GitHub's published SHA-256 digest, use this app's package ID, and match the installed signing certificate. Android controls final installation confirmation."
+            body = "NixMC never silently installs an APK. Updates come from successful GitHub Actions artifacts, match GitHub's SHA-256 digest and CI build number, use this app's package ID, and match the installed signing certificate. Android controls final installation confirmation."
         )
 
         InfoCard(
