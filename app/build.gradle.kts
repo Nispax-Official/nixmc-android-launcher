@@ -12,7 +12,7 @@ android {
         applicationId = "in.nispax.nixmc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.coerceAtLeast(6) ?: 6
         versionName = "0.5.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
