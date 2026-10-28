@@ -10,6 +10,10 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.concurrent.CancellationException
 
 data class InstalledJavaRuntime(
     val home: File,
@@ -17,12 +21,20 @@ data class InstalledJavaRuntime(
     val majorVersion: Int
 )
 
+data class JavaRuntimeStatus(
+    val runtime: InstalledJavaRuntime?,
+    val diagnostic: String
+) {
+    val isReady: Boolean get() = runtime != null
+}
+
 /**
- * Downloads and extracts the Android-specific OpenJDK 21 runtime published for Amethyst.
- * It does not include the native Minecraft graphics bridge or custom LWJGL stack.
+ * Downloads and verifies a pinned Android OpenJDK 21 runtime build.
+ * Runtime setup remains separate from the not-yet-integrated graphics bridge.
  */
 object AndroidJavaRuntimeInstaller {
     private const val RUNTIME_VERSION = 21
+    private const val MAX_RUNTIME_ARCHIVE_BYTES = 512L * 1024L * 1024L
     private const val RELEASE_BASE =
         "https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/download/download_jre21/"
 
@@ -35,6 +47,26 @@ object AndroidJavaRuntimeInstaller {
         "x86_64" to RuntimeAsset("x86_64", "cb88723961f5f9ad63afa1f212eb199816c27cabfd7dc66567bde1d8fb69713b")
     )
 
+    /**
+     * Re-checks a previously installed runtime without downloading anything.
+     * The startup probe runs off the main thread and returns its diagnostic for
+     * the launch-readiness screen.
+     */
+    suspend fun inspectInstalled(filesDir: File): JavaRuntimeStatus = withContext(Dispatchers.IO) {
+        val runtimeRoot = File(filesDir, "minecraft/runtime/java-21")
+        val java = findJava(runtimeRoot)
+            ?: return@withContext JavaRuntimeStatus(null, "Java 21 runtime is not installed.")
+        val probeError = testJava(java)
+        if (probeError != null) {
+            JavaRuntimeStatus(null, "Installed Java runtime failed its startup probe: $probeError")
+        } else {
+            JavaRuntimeStatus(
+                InstalledJavaRuntime(runtimeRoot, java, RUNTIME_VERSION),
+                "Java 21 runtime passed java -version."
+            )
+        }
+    }
+
     suspend fun install(
         filesDir: File,
         onStatus: (String) -> Unit = {}
@@ -44,80 +76,158 @@ object AndroidJavaRuntimeInstaller {
         if (abi == "x86") error("Java 21 runtime is not published for 32-bit x86 devices.")
         val asset = assets.getValue(abi)
         val fileName = "jre21-android-${asset.arch}.tar.xz"
-        val archive = File(File(filesDir, "cache"), fileName)
-        val runtimeRoot = File(filesDir, "minecraft/runtime/java-21")
+        val gameRoot = File(filesDir, "minecraft")
+        val cacheDir = File(gameRoot, "cache")
+        val runtimeParent = File(gameRoot, "runtime")
+        check(cacheDir.exists() || cacheDir.mkdirs()) { "Could not create private game cache directory." }
+        check(runtimeParent.exists() || runtimeParent.mkdirs()) { "Could not create Java runtime directory." }
+        val archive = File(cacheDir, fileName)
+        val runtimeRoot = File(runtimeParent, "java-21")
+        val stagingRoot = File(runtimeParent, "java-21.installing")
+        val backupRoot = File(runtimeParent, "java-21.previous")
+        val legacyArchive = File(File(filesDir, "cache"), fileName)
+        legacyArchive.delete()
+        File(legacyArchive.parentFile, legacyArchive.name + ".part").delete()
+        legacyArchive.parentFile?.delete() // Succeeds only if the old cache directory is empty.
 
         val existingJava = findJava(runtimeRoot)
         if (existingJava != null) {
             val probeError = testJava(existingJava)
-            if (probeError == null) return@withContext InstalledJavaRuntime(runtimeRoot, existingJava, RUNTIME_VERSION)
+            if (probeError == null) {
+                archive.delete()
+                File(archive.parentFile, archive.name + ".part").delete()
+                return@withContext InstalledJavaRuntime(runtimeRoot, existingJava, RUNTIME_VERSION)
+            }
         }
 
-        onStatus("Downloading Android Java 21 runtime for ${asset.arch}…")
-        check(archive.parentFile?.let { it.exists() || it.mkdirs() } == true) {
-            "Could not create runtime download directory."
+        onStatus("Checking the pinned Java 21 runtime archive for " + asset.arch + "…")
+        if (!archive.isFile || !sha256(archive).equals(asset.sha256, ignoreCase = true)) {
+            archive.delete()
+            download(RELEASE_BASE + fileName, archive, asset.sha256, onStatus)
         }
-        download(RELEASE_BASE + fileName, archive, onStatus)
         check(sha256(archive).equals(asset.sha256, ignoreCase = true)) {
             archive.delete()
-            "Java runtime checksum failed. The archive was discarded."
+            "Java runtime SHA-256 verification failed. The archive was discarded."
         }
 
-        onStatus("Extracting Java 21 runtime…")
-        if (runtimeRoot.exists()) runtimeRoot.deleteRecursively()
-        check(runtimeRoot.mkdirs()) { "Could not create Java runtime directory." }
-        extractTarXz(archive, runtimeRoot, onStatus)
+        onStatus("Extracting Java 21 runtime into a temporary install directory…")
+        stagingRoot.deleteRecursively()
+        check(stagingRoot.mkdirs()) { "Could not create Java runtime staging directory." }
+        try {
+            extractTarXz(archive, stagingRoot, onStatus)
+            val stagedJava = findJava(stagingRoot)
+                ?: error("Runtime archive extracted, but bin/java was not found.")
+            stagedJava.setExecutable(true, true)
+            val probeError = testJava(stagedJava)
+            check(probeError == null) {
+                "Java 21 files were extracted, but the runtime could not start: $probeError. A compatible Android JVM/native bridge is still required."
+            }
+
+            backupRoot.deleteRecursively()
+            if (runtimeRoot.exists()) {
+                check(runtimeRoot.renameTo(backupRoot)) { "Could not safely stage the previous Java runtime." }
+            }
+            if (!stagingRoot.renameTo(runtimeRoot)) {
+                if (backupRoot.exists()) backupRoot.renameTo(runtimeRoot)
+                error("Could not atomically activate the verified Java runtime.")
+            }
+            backupRoot.deleteRecursively()
+        } catch (error: Exception) {
+            stagingRoot.deleteRecursively()
+            throw error
+        }
+
         archive.delete()
-
-        val java = findJava(runtimeRoot)
-            ?: error("Runtime archive extracted, but bin/java was not found.")
-        java.setExecutable(true, true)
-        val probeError = testJava(java)
-        check(probeError == null) {
-            "Java 21 files were extracted, but the runtime could not start: $probeError. A compatible Android JVM/native bridge is still required."
-        }
-        onStatus("Java 21 runtime installed and passed java -version.")
-        InstalledJavaRuntime(runtimeRoot, java, RUNTIME_VERSION)
+        File(archive.parentFile, archive.name + ".part").delete()
+        onStatus("Java 21 runtime installed and passed its startup check.")
+        val installedJava = findJava(runtimeRoot)
+            ?: error("Verified runtime was activated, but bin/java is missing.")
+        InstalledJavaRuntime(runtimeRoot, installedJava, RUNTIME_VERSION)
     }
 
-    private fun download(url: String, target: File, onStatus: (String) -> Unit) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 90_000
-            setRequestProperty("User-Agent", "NixMC-Android-Launcher/0.3.0")
-        }
+    private fun download(url: String, target: File, expectedSha256: String, onStatus: (String) -> Unit) {
         val temporary = File(target.parentFile, target.name + ".part")
-        try {
-            val code = connection.responseCode
-            if (code !in 200..299) error("Runtime download returned HTTP $code.")
-            val length = connection.contentLengthLong
-            connection.inputStream.use { input ->
-                temporary.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var total = 0L
-                    var previous = -1
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        total += count
-                        if (length > 0) {
-                            val percent = (total * 100 / length).toInt()
-                            if (percent != previous) {
-                                previous = percent
-                                onStatus("Downloading Java 21 runtime… $percent%")
+        var lastError: Exception? = null
+        for (attempt in 1..3) {
+            DownloadCancellation.throwIfRequested()
+            val connection = try {
+                HttpsConnectionFactory.open(url)
+            } catch (error: Exception) {
+                lastError = error
+                if (attempt == 3) break
+                onStatus("Java runtime connection failed; retrying (" + (attempt + 1) + "/3)…")
+                try {
+                    Thread.sleep(attempt * 1_000L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw CancellationException("Download canceled by the user.")
+                }
+                continue
+            }
+            try {
+                val code = connection.responseCode
+                if (code !in 200..299) error("Runtime download returned HTTP $code.")
+                val length = connection.contentLengthLong
+                var total = 0L
+                var previous = -1
+                connection.inputStream.use { input ->
+                    temporary.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            DownloadCancellation.throwIfRequested()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            check(total <= MAX_RUNTIME_ARCHIVE_BYTES) {
+                                "Java runtime archive exceeded the 512 MiB download limit."
+                            }
+                            if (length > 0L) check(total <= length) { "Java runtime exceeded its declared download size." }
+                            output.write(buffer, 0, count)
+                            if (length > 0L) {
+                                val percent = (total * 100 / length).toInt().coerceIn(0, 100)
+                                if (percent != previous) {
+                                    previous = percent
+                                    onStatus("Downloading Java 21 runtime… " + percent + "%")
+                                }
                             }
                         }
                     }
                 }
+                if (length > 0L) check(total == length) { "Java runtime archive size did not match the server's declared size." }
+                check(sha256(temporary).equals(expectedSha256, ignoreCase = true)) {
+                    "Java runtime SHA-256 verification failed."
+                }
+                atomicReplace(temporary, target)
+                return
+            } catch (error: CancellationException) {
+                temporary.delete()
+                throw error
+            } catch (error: Exception) {
+                temporary.delete()
+                lastError = error
+                if (attempt == 3) break
+                onStatus("Java runtime download or SHA-256 check failed; retrying (" + (attempt + 1) + "/3)…")
+                try {
+                    Thread.sleep(attempt * 1_000L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw CancellationException("Download canceled by the user.")
+                }
+            } finally {
+                connection.disconnect()
             }
-            if (target.exists()) target.delete()
-            check(temporary.renameTo(target)) { "Could not save Java runtime archive." }
-        } catch (error: Exception) {
-            temporary.delete()
-            throw error
-        } finally {
-            connection.disconnect()
+        }
+        temporary.delete()
+        throw IllegalStateException("Java runtime download failed after 3 attempts: " +
+            (lastError?.message ?: "unknown network error"), lastError)
+    }
+
+    private fun atomicReplace(temporary: File, target: File) {
+        try {
+            Files.move(temporary.toPath(), target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -126,7 +236,10 @@ object AndroidJavaRuntimeInstaller {
         TarArchiveInputStream(XZCompressorInputStream(archive.inputStream().buffered())).use { tar ->
             var entry = tar.nextTarEntry
             var count = 0
+            var totalExpandedBytes = 0L
             while (entry != null) {
+                DownloadCancellation.throwIfRequested()
+                check(count < 100_000) { "Java runtime archive contains too many entries." }
                 val output = File(destination, entry.name).canonicalFile
                 check(output.path.startsWith(canonicalRoot.path + File.separator) || output == canonicalRoot) {
                     "Runtime archive contains an unsafe path."
@@ -150,11 +263,19 @@ object AndroidJavaRuntimeInstaller {
                         }
                     }
                     entry.isFile -> {
-                        output.parentFile?.mkdirs()
+                        require(entry.size >= 0L && entry.size <= 512L * 1024L * 1024L) {
+                            "Java runtime archive contains an invalid or oversized file."
+                        }
+                        totalExpandedBytes += entry.size
+                        check(totalExpandedBytes <= 2L * 1024L * 1024L * 1024L) {
+                            "Java runtime archive expands beyond the allowed size."
+                        }
+                        output.parentFile?.let { check(it.exists() || it.mkdirs()) { "Could not create runtime directory." } }
                         output.outputStream().buffered().use { out ->
                             val buffer = ByteArray(64 * 1024)
                             var remaining = entry.size
                             while (remaining > 0) {
+                                DownloadCancellation.throwIfRequested()
                                 val read = tar.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                                 if (read < 0) error("Unexpected end of Java runtime archive.")
                                 out.write(buffer, 0, read)
