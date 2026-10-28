@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val ciVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.coerceAtLeast(6) ?: 6
+val ciGitSha = System.getenv("GITHUB_SHA") ?: "local"
+
 android {
     namespace = "in.nispax.nixmc"
     compileSdk = 35
@@ -12,8 +15,9 @@ android {
         applicationId = "in.nispax.nixmc"
         minSdk = 26
         targetSdk = 35
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.coerceAtLeast(6) ?: 6
+        versionCode = ciVersionCode
         versionName = "0.5.1"
+        buildConfigField("String", "GIT_SHA", "\"$ciGitSha\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +43,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
