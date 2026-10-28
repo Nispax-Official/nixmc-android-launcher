@@ -2,7 +2,7 @@
 
 NixMC is an early-stage, mobile-first launcher project for Minecraft Java Edition.
 
-## Current milestone — 0.5.0 download reliability and engine foundation
+## Current milestone — 0.5.1 updater, download reliability, and engine foundation
 
 The app has a dark Jetpack Compose UI with Home, Profile, Setup, and Settings navigation. A local offline profile is editable, validated, and persisted. The test version is locked to Minecraft Java Edition 1.21.11.
 
@@ -27,9 +27,13 @@ All Minecraft game files, downloaded assets, libraries, runtime archives, and in
 - Minimum Android SDK: 26 (Android 8.0)
 - Compile / target SDK: 35
 - Java bytecode target: 17
-- App version: 0.5.0 (version code 5)
+- App version: 0.5.1 (version code 6)
 - Android Gradle Plugin: 8.9.2
 - Gradle build version used in CI: 8.11.1
+
+## Built-in launcher updater
+
+The Settings screen checks the latest stable GitHub Release from this repository. To offer an update, publish the APK as the release asset `nixmc-android.apk`; GitHub's release-asset API SHA-256 digest is checked, the APK package ID and signing certificate are compared with the installed app, and only a verified APK is handed to Android's package installer. Android may ask the user to permit installs from NixMC and always controls final installation confirmation. Updates must be signed with the same app-signing certificate; the updater refuses mismatched APKs. No personal access token is embedded in the app.
 
 ## Build and test
 
