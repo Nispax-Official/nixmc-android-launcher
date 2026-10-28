@@ -395,21 +395,6 @@ object LauncherUpdateManager {
         return signers.map { toHex(MessageDigest.getInstance("SHA-256").digest(it.toByteArray())) }.toSet()
     }
 
-    private fun readCapped(input: java.io.InputStream, limit: Int): ByteArray {
-        input.use {
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            var total = 0
-            while (true) {
-                val count = it.read(buffer)
-                if (count < 0) break
-                total += count
-                if (total > limit) throw IOException("GitHub returned an oversized update response.")
-                output.write(buffer, 0, count)
-            }
-            return output.toByteArray()
-        }
-    }
 
     private fun toHex(bytes: ByteArray): String = buildString(bytes.size * 2) {
         for (byte in bytes) append("%02x".format(byte.toInt() and 0xff))
