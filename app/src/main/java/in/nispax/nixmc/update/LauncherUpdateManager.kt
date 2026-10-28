@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import `in`.nispax.nixmc.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -65,6 +66,7 @@ object LauncherUpdateManager {
                 ?: throw IOException("No NixMC Android CI builds were found on GitHub.")
             val latestSha = latest.optString("head_sha", "")
             if (latestSha.isBlank()) throw IOException("The latest CI build has no source revision.")
+            if (latestSha == BuildConfig.GIT_SHA) return@withContext null
 
             // Do not fall back to an older source revision if the newest source has not built cleanly.
             val matchingSuccess = androidRuns.firstOrNull {
