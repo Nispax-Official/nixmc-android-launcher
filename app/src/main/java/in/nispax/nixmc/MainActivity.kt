@@ -828,7 +828,7 @@ private fun SettingsScreen() {
                             try {
                                 val update = LauncherUpdateManager.checkForUpdate(context)
                                 if (update == null) {
-                                    updateStatus = "NixMC ${BuildConfig.VERSION_NAME} is up to date."
+                                    updateStatus = "NixMC 0.5.1 is up to date."
                                 } else {
                                     availableUpdate = update
                                     updateStatus = "Version ${update.versionName} is available. Download and verify it before installing."
@@ -945,7 +945,7 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+                InfoRow("App version", "0.5.1 (build 6)")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")
