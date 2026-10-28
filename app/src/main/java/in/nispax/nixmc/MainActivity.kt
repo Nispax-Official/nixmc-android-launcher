@@ -77,6 +77,8 @@ import `in`.nispax.nixmc.engine.EngineBridgeVerifier
 import `in`.nispax.nixmc.download.DownloadActions
 import `in`.nispax.nixmc.download.DownloadStateStore
 import `in`.nispax.nixmc.download.GameDownloadService
+import `in`.nispax.nixmc.update.LauncherUpdateManager
+import `in`.nispax.nixmc.update.LauncherUpdateRelease
 
 private val NixBackground = Color(0xFF0B0D12)
 private val NixSurface = Color(0xFF151922)
@@ -514,15 +516,15 @@ private fun SetupScreen(
     val installStatus = downloadState.takeIf { it.action == DownloadActions.GAME }?.status
         ?: "Game files not verified yet. Tap install to start a visible background download."
     val runtimeStatus = downloadState.takeIf { it.action == DownloadActions.JAVA }?.status
-        ?: "Java 21 runtime has not been checked in build 0.5.0."
+        ?: "Java 21 runtime has not been checked in build 0.5.1."
     val installError = downloadState.action == DownloadActions.GAME && (downloadState.isFailed || downloadState.isCanceled)
     val runtimeError = downloadState.action == DownloadActions.JAVA && (downloadState.isFailed || downloadState.isCanceled)
-    var isCheckingLaunchPlan by rememberSaveable("0.5.0", "isCheckingLaunchPlan") { mutableStateOf(false) }
-    var launchPlanStatus by rememberSaveable("0.5.0", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.5.0.") }
-    var launchPlanError by rememberSaveable("0.5.0", "launchPlanError") { mutableStateOf(false) }
-    var gameFilesVerified by rememberSaveable("0.5.0", "gameFilesVerified") { mutableStateOf(false) }
-    var runtimeCheckPassed by rememberSaveable("0.5.0", "runtimeCheckPassed") { mutableStateOf(false) }
-    var bridgeManifestPassed by rememberSaveable("0.5.0", "bridgeManifestPassed") { mutableStateOf(false) }
+    var isCheckingLaunchPlan by rememberSaveable("0.5.1", "isCheckingLaunchPlan") { mutableStateOf(false) }
+    var launchPlanStatus by rememberSaveable("0.5.1", "launchPlanStatus") { mutableStateOf("Readiness has not been checked in build 0.5.1.") }
+    var launchPlanError by rememberSaveable("0.5.1", "launchPlanError") { mutableStateOf(false) }
+    var gameFilesVerified by rememberSaveable("0.5.1", "gameFilesVerified") { mutableStateOf(false) }
+    var runtimeCheckPassed by rememberSaveable("0.5.1", "runtimeCheckPassed") { mutableStateOf(false) }
+    var bridgeManifestPassed by rememberSaveable("0.5.1", "bridgeManifestPassed") { mutableStateOf(false) }
     LaunchedEffect(downloadState.action, downloadState.phase) {
         if (downloadState.action == DownloadActions.GAME && downloadState.isComplete) gameFilesVerified = true
         if (downloadState.action == DownloadActions.JAVA && downloadState.isComplete) runtimeCheckPassed = true
@@ -536,12 +538,12 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         PageHeading(
-            eyebrow = "LAUNCHER SETUP · BUILD 0.5.0",
+            eyebrow = "LAUNCHER SETUP · BUILD 0.5.1",
             title = "Prepare to play.",
-            subtitle = "NixMC 0.5.0 keeps downloads visible in Android notifications, verifies official hashes, and stores game data privately. Locked to Minecraft Java Edition 1.21.11."
+            subtitle = "NixMC 0.5.1 keeps downloads visible in Android notifications, verifies official hashes, and stores game data privately. Locked to Minecraft Java Edition 1.21.11."
         )
         Text(
-            "BUILD CHECK: 0.5.0 · If this label is not visible, the previous APK is still installed.",
+            "BUILD CHECK: 0.5.1 · If this label is not visible, the previous APK is still installed.",
             color = NixAccent,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
@@ -776,6 +778,17 @@ private fun SetupScreen(
 
 @Composable
 private fun SettingsScreen() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var isCheckingUpdates by remember { mutableStateOf(false) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableStateOf(0) }
+    var updateStatus by remember {
+        mutableStateOf("Check GitHub for the latest stable NixMC release.")
+    }
+    var availableUpdate by remember { mutableStateOf<LauncherUpdateRelease?>(null) }
+    var verifiedApk by remember { mutableStateOf<File?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -786,8 +799,142 @@ private fun SettingsScreen() {
         PageHeading(
             eyebrow = "SETTINGS",
             title = "NixMC details.",
-            subtitle = "Launcher preferences and runtime configuration will live here as the project grows."
+            subtitle = "Launcher preferences, updates, and runtime configuration."
         )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = NixSurface)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("BUILT-IN UPDATER", color = NixAccent, fontSize = 11.sp, letterSpacing = 1.6.sp)
+                Text(
+                    "Check GitHub Releases, download the official NixMC APK, verify its SHA-256 digest and signing certificate, then open Android's installer.",
+                    color = NixMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isCheckingUpdates = true
+                            availableUpdate = null
+                            verifiedApk = null
+                            updateStatus = "Checking the latest stable GitHub Release…"
+                            try {
+                                val update = LauncherUpdateManager.checkForUpdate(context)
+                                if (update == null) {
+                                    updateStatus = "NixMC ${BuildConfig.VERSION_NAME} is up to date."
+                                } else {
+                                    availableUpdate = update
+                                    updateStatus = "Version ${update.versionName} is available. Download and verify it before installing."
+                                }
+                            } catch (error: Exception) {
+                                updateStatus = error.message ?: "Update check failed. Please try again."
+                            } finally {
+                                isCheckingUpdates = false
+                            }
+                        }
+                    },
+                    enabled = !isCheckingUpdates && !isDownloadingUpdate,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (isCheckingUpdates) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF10150C)
+                        )
+                        Spacer(Modifier.width(9.dp))
+                    } else {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(9.dp))
+                    }
+                    Text(if (isCheckingUpdates) "CHECKING GITHUB…" else "CHECK FOR UPDATES")
+                }
+
+                val releaseToDownload = availableUpdate
+                if (releaseToDownload != null) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isDownloadingUpdate = true
+                                updateProgress = 0
+                                verifiedApk = null
+                                updateStatus = "Downloading and verifying NixMC ${releaseToDownload.versionName}…"
+                                try {
+                                    val apk = LauncherUpdateManager.downloadAndVerify(
+                                        context,
+                                        releaseToDownload
+                                    ) { percent ->
+                                        updateProgress = percent
+                                    }
+                                    verifiedApk = apk
+                                    updateStatus = "APK verified: SHA-256 and app-signing certificate match. Ready for Android installation."
+                                } catch (error: Exception) {
+                                    updateStatus = error.message ?: "Download or verification failed. The APK was rejected."
+                                } finally {
+                                    isDownloadingUpdate = false
+                                }
+                            }
+                        },
+                        enabled = !isCheckingUpdates && !isDownloadingUpdate,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            if (isDownloadingUpdate) "DOWNLOADING… ${updateProgress}%"
+                            else "DOWNLOAD ${releaseToDownload.versionName}"
+                        )
+                    }
+                }
+
+                if (isDownloadingUpdate) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { updateProgress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                val apkReadyToInstall = verifiedApk
+                if (apkReadyToInstall != null) {
+                    Button(
+                        onClick = {
+                            try {
+                                updateStatus = LauncherUpdateManager.openInstaller(context, apkReadyToInstall)
+                            } catch (error: Exception) {
+                                updateStatus = error.message ?: "Could not open Android's package installer."
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NixAccent,
+                            contentColor = Color(0xFF10150C)
+                        )
+                    ) {
+                        Text("INSTALL VERIFIED UPDATE")
+                    }
+                }
+
+                Text(
+                    updateStatus,
+                    color = if (
+                        updateStatus.contains("failed", ignoreCase = true) ||
+                        updateStatus.contains("reject", ignoreCase = true) ||
+                        updateStatus.contains("not published", ignoreCase = true) ||
+                        updateStatus.contains("different certificate", ignoreCase = true)
+                    ) MaterialTheme.colorScheme.error else NixMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -798,7 +945,7 @@ private fun SettingsScreen() {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                InfoRow("App version", "0.5.0 (build 5)")
+                InfoRow("App version", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
                 InfoRow("Package ID", "in.nispax.nixmc")
                 InfoRow("Minimum Android", "Android 8.0 (API 26)")
                 InfoRow("UI toolkit", "Kotlin + Jetpack Compose")
@@ -809,8 +956,14 @@ private fun SettingsScreen() {
 
         InfoCard(
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = NixBlue) },
+            title = "Security and installation",
+            body = "NixMC never silently installs an APK. Updates must come from a stable GitHub Release, match GitHub's published SHA-256 digest, use this app's package ID, and match the installed signing certificate. Android controls final installation confirmation."
+        )
+
+        InfoCard(
+            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = NixBlue) },
             title = "Project status",
-            body = "NixMC is an early development project. The profile and launcher UI work locally; downloading Minecraft, Java runtime execution, rendering, and input support still need implementation and testing."
+            body = "The profile, download flow, and engine foundation are under active development. Minecraft still cannot launch end-to-end until the Android-native graphics bridge, renderer, and touch-input session are integrated and tested."
         )
     }
 }
