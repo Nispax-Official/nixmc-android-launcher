@@ -33,7 +33,7 @@ All Minecraft game files, downloaded assets, libraries, runtime archives, and in
 
 ## Built-in launcher updater
 
-The Settings screen checks the latest stable GitHub Release from this repository. To offer an update, publish the APK as the release asset `nixmc-android.apk`; GitHub's release-asset API SHA-256 digest is checked, the APK package ID and signing certificate are compared with the installed app, and only a verified APK is handed to Android's package installer. Android may ask the user to permit installs from NixMC and always controls final installation confirmation. Updates must be signed with the same app-signing certificate; the updater refuses mismatched APKs. No personal access token is embedded in the app.
+The Settings screen checks the latest Android CI build on `engine/launch-core-phase-1`; no release tags or manual release creation are required. The workflow uploads a GitHub Actions artifact, whose SHA-256 digest is checked before extracting the APK. The app validates the package ID, CI run/version-code match, and installed signing certificate before it offers the file to Android's installer. Android may ask the user to permit installs from NixMC and always controls final installation confirmation. Updates signed with a different certificate are rejected. No personal access token is embedded in the app.
 
 ## Build and test
 
